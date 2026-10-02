@@ -1,0 +1,7 @@
+@model ReferralsViewModel
+@{ ViewData["Title"] = "Referrals"; }
+<section class="page-heading"><div><span class="eyebrow">Invite friends</span><h1>Share the rewards</h1><p>Give friends your referral code when they create an account.</p></div></section>
+<div class="referral-hero"><div><small>Your referral code</small><strong id="referralCode">@Model.ReferralCode</strong></div><div class="d-flex gap-2"><button class="btn btn-light" type="button" id="copyReferral">Copy code</button><button class="btn btn-outline-light" type="button" id="shareReferral">Share</button></div></div>
+<section class="content-section"><div class="section-title"><h2>Friends who joined</h2><span>@Model.Members.Count total</span></div>
+@if (Model.Members.Count == 0) { <div class="empty-state panel">No referrals yet. Share your code to invite your first friend.</div> }
+<div class="activity-list">@foreach (var member in Model.Members) { <div class="activity-item"><span class="activity-badge">@member.Name[0]</span><div><strong>@member.Name</strong><small>@member.Tier member</small></div><div>@(member.JoinedAt?.ToString("dd MMM yyyy") ?? "Joined")</div></div> }</div></section>

@@ -1,0 +1,4 @@
+@model ActivityRecord
+@{ ViewData["Title"] = "Top-up details"; }
+<section class="page-heading"><div><span class="eyebrow">Wallet activity</span><h1>Top-up details</h1><p>Transaction information supplied by the loyalty service.</p></div><a class="btn btn-outline-dark" asp-action="History" asp-route-type="Top-up">Back to top-ups</a></section>
+<div class="form-card narrow-card"><dl class="profile-details"><div><dt>Description</dt><dd>@Model.Description</dd></div><div><dt>Amount</dt><dd>@(Model.Amount is null ? "Not shown" : $"RM {Model.Amount:N2}")</dd></div><div><dt>Date</dt><dd>@(Model.OccurredAt == DateTime.MinValue ? "Not shown" : Model.OccurredAt.ToString("dd MMM yyyy, h:mm tt"))</dd></div><div><dt>Status</dt><dd>@(Model.Status ?? "Not shown")</dd></div><div><dt>Reference</dt><dd>@(Model.ReferenceId ?? "Not shown")</dd></div></dl></div>

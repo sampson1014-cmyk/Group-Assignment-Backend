@@ -1,0 +1,43 @@
+@model LoginViewModel
+@{
+    ViewData["Title"] = "Member login";
+}
+
+<section class="auth-shell">
+    <div class="auth-copy">
+        <span class="eyebrow">Welcome back</span>
+        <h1>Pick up where you left off.</h1>
+        <p>Log in to view your balance, points, stamps and rewards.</p>
+    </div>
+    <div class="form-card">
+        <h2>Member login</h2>
+        @if (TempData["StatusMessage"] is string message)
+        {
+            <div class="alert alert-success">@message</div>
+        }
+        <form method="post" asp-route-returnUrl="@ViewData["ReturnUrl"]">
+            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+            <div class="form-floating mb-3">
+                <input asp-for="Identifier" class="form-control" placeholder="Email address" autocomplete="username" />
+                <label asp-for="Identifier"></label>
+                <span asp-validation-for="Identifier" class="text-danger"></span>
+            </div>
+            <div class="form-floating mb-3">
+                <input asp-for="Password" class="form-control" placeholder="Password" autocomplete="current-password" />
+                <label asp-for="Password"></label>
+                <span asp-validation-for="Password" class="text-danger"></span>
+            </div>
+            <div class="form-check mb-4">
+                <input asp-for="RememberMe" class="form-check-input" />
+                <label asp-for="RememberMe" class="form-check-label">Keep me signed in</label>
+            </div>
+            <div class="text-end mb-3"><a asp-action="ForgotPassword">Forgot password?</a></div>
+            <button class="btn btn-primary w-100 btn-lg" type="submit">Log in</button>
+        </form>
+        <div class="auth-divider"><span>or</span></div>
+        <a class="btn btn-outline-dark w-100" asp-action="PhoneLogin">Log in with phone OTP</a>
+        <p class="form-foot">New to Eduvo? <a asp-action="Register">Create an account</a></p>
+    </div>
+</section>
+
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

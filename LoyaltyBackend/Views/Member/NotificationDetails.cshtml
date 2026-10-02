@@ -1,0 +1,4 @@
+@model NotificationCard
+@{ ViewData["Title"] = "Notification details"; }
+<section class="page-heading"><div><span class="eyebrow">@Model.Type</span><h1>@Model.Title</h1><p>@(Model.SentAt == DateTime.MinValue ? "Member notification" : Model.SentAt.ToString("dd MMM yyyy, h:mm tt"))</p></div><a class="btn btn-outline-dark" asp-action="Notifications">Back to inbox</a></section>
+<article class="form-card narrow-card"><p>@Model.Content</p></article>

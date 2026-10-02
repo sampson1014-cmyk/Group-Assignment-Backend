@@ -1,0 +1,12 @@
+@model IReadOnlyList<OutletCard>
+@{ ViewData["Title"] = "Stores"; }
+<section class="page-heading"><div><span class="eyebrow">Find us</span><h1>Nearby Eduvo stores</h1><p>Choose a store to earn points, collect stamps or redeem a reward.</p></div><button class="btn btn-outline-dark" id="locationButton" type="button">Use my location</button></section>
+<div class="outlet-layout">
+    <div class="outlet-list">
+        @foreach (var outlet in Model)
+        {
+            <article class="outlet-card" data-lat="@outlet.Latitude.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-lng="@outlet.Longitude.ToString(System.Globalization.CultureInfo.InvariantCulture)"><span class="outlet-number">@outlet.Id.ToString("00")</span><div><h2>@outlet.Name</h2><p>@outlet.Address</p><a href="tel:@outlet.Phone">@outlet.Phone</a><small class="distance"></small><button class="btn btn-sm btn-outline-dark outlet-map-button mt-2" type="button">Show on map</button></div></article>
+        }
+    </div>
+    <div class="outlet-map-shell"><iframe id="outletMap" title="Selected outlet map" loading="lazy" referrerpolicy="no-referrer" src="about:blank"></iframe><a id="openMapLink" class="btn btn-light btn-sm" target="_blank" rel="noopener noreferrer">Open full map</a></div>
+</div>

@@ -1,0 +1,37 @@
+@model RewardsViewModel
+@{ ViewData["Title"] = "Rewards"; }
+<section class="page-heading"><div><span class="eyebrow">Rewards</span><h1>Something good is waiting</h1><p>Use points on rewards and keep owned vouchers ready for the counter.</p></div></section>
+<div class="filter-row reward-tabs" role="tablist">
+    <button class="filter-chip active" type="button" data-reward-tab="rewards">Rewards (@Model.Rewards.Count)</button>
+    <button class="filter-chip" type="button" data-reward-tab="vouchers">Vouchers (@Model.Vouchers.Count)</button>
+    <button class="filter-chip" type="button" data-reward-tab="mine">My items (@(Model.OwnedRewards.Count + Model.OwnedVouchers.Count))</button>
+</div>
+<div class="reward-panel" data-reward-panel="rewards">
+<div class="reward-grid large">
+    @foreach (var reward in Model.Rewards)
+    {
+        <article class="reward-card">
+            <div class="d-flex justify-content-between"><span class="reward-category">@reward.Category</span>@if (reward.Owned) { <span class="owned-pill">Owned</span> }</div>
+            <div class="reward-art">✦</div><h2>@reward.Name</h2><p>@reward.Description</p><div class="reward-footer"><strong>@reward.Points points</strong><a class="btn btn-sm btn-outline-dark" asp-action="RewardDetails" asp-route-id="@(reward.RewardId ?? reward.Id.ToString())">View details</a></div>
+        </article>
+    }
+</div>
+</div>
+<div class="reward-panel d-none" data-reward-panel="vouchers">
+<div class="reward-grid large">
+    @foreach (var reward in Model.Vouchers)
+    {
+            <article class="reward-card"><span class="reward-category">@reward.Category</span><div class="reward-art">◇</div><h2>@reward.Name</h2><p>@reward.Description</p><div class="reward-footer"><strong>@(reward.DiscountAmount ?? $"{reward.Points} points")</strong><a class="btn btn-sm btn-outline-dark" asp-action="RewardDetails" asp-route-id="@(reward.RewardId ?? reward.Id.ToString())" asp-route-voucher="true">View details</a></div></article>
+    }
+</div>
+</div>
+<div class="reward-panel d-none" data-reward-panel="mine">
+    @{ var owned = Model.OwnedRewards.Concat(Model.OwnedVouchers).ToArray(); }
+    @if (owned.Length == 0) { <div class="empty-state panel">You do not have any rewards or vouchers yet.</div> }
+    <div class="reward-grid large">
+        @foreach (var reward in owned)
+        {
+            <article class="reward-card"><div class="d-flex justify-content-between"><span class="reward-category">@reward.Category</span><span class="owned-pill">Owned</span></div>@if (!string.IsNullOrWhiteSpace(reward.RewardId)) { <img class="reward-qr" src="@Url.Action("RewardQr", "Member", new { id = reward.RewardId })" alt="@reward.Name redemption QR"/> } else { <div class="reward-art">✓</div> }<h2>@reward.Name</h2><p>@reward.Description</p><strong>@(reward.ExpireAt?.ToString("dd MMM yyyy") ?? "Ready to redeem")</strong></article>
+        }
+    </div>
+</div>

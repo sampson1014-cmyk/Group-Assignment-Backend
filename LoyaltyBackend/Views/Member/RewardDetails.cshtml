@@ -1,0 +1,10 @@
+@model RewardCard
+@{ var voucher = ViewData["Voucher"] as bool? == true; ViewData["Title"] = voucher ? "Voucher details" : "Reward details"; }
+<section class="page-heading"><div><span class="eyebrow">@(voucher ? "Voucher" : "Reward")</span><h1>@Model.Name</h1><p>@Model.Description</p></div><a class="btn btn-outline-dark" asp-action="Rewards">Back to rewards</a></section>
+<div class="form-card narrow-card">
+    <dl class="profile-details">
+        <div><dt>Category</dt><dd>@Model.Category</dd></div>
+        <div><dt>@(voucher ? "Value" : "Points required")</dt><dd>@(voucher ? Model.DiscountAmount ?? $"{Model.Points} points" : $"{Model.Points} points")</dd></div>
+        <div><dt>Expiry</dt><dd>@(Model.ExpireAt?.ToString("dd MMM yyyy") ?? "No expiry shown")</dd></div>
+    </dl>
+</div>

@@ -1,0 +1,17 @@
+@model IReadOnlyList<ActivityRecord>
+@{ ViewData["Title"] = "Activity history"; var selected = ViewData["Type"] as string; }
+<section class="page-heading"><div><span class="eyebrow">Activity</span><h1>Your loyalty history</h1><p>Review wallet, points, stamps and redemption activity.</p></div></section>
+<div class="filter-row">
+    @foreach (var filter in new[] { "All", "Wallet", "Top-up", "Points", "Stamp", "Reward", "Voucher" })
+    {
+        var isActive = filter == "All" ? string.IsNullOrWhiteSpace(selected) : filter.Equals(selected, StringComparison.OrdinalIgnoreCase);
+        <a class="filter-chip @(isActive ? "active" : "")" asp-action="History" asp-route-type="@(filter == "All" ? null : filter)">@filter</a>
+    }
+</div>
+<div class="activity-list panel">
+    @if (Model.Count == 0) { <div class="empty-state">No activity was found for this filter.</div> }
+    @foreach (var item in Model)
+    {
+        <div class="activity-item"><span class="activity-badge">@item.Type[0]</span><div><strong>@item.Description</strong><small>@(item.OccurredAt == DateTime.MinValue ? item.Type : $"{item.OccurredAt:dd MMM yyyy, h:mm tt} · {item.Type}")</small>@if (item.Type.Equals("Top-up", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(item.ReferenceId)) { <a asp-action="TopUpDetails" asp-route-id="@item.ReferenceId">View details</a> }</div><div class="activity-value">@(item.Amount is not null ? $"{item.Amount:+0.00;-0.00} RM" : item.Points is not null ? $"+{item.Points} pts" : item.Status ?? "Recorded")</div></div>
+    }
+</div>

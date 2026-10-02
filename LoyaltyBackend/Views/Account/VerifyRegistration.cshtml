@@ -1,0 +1,4 @@
+@model OtpChallengeViewModel
+@{ ViewData["Title"] = "Verify registration"; }
+<section class="auth-shell"><div class="auth-copy"><span class="eyebrow">Almost there</span><h1>Verify your phone.</h1><p>Enter the registration code sent to <strong>@Model.PhoneNumber</strong>.</p></div><div class="form-card"><h2>Registration code</h2><form method="post"><input asp-for="PhoneNumber" type="hidden"/><div asp-validation-summary="ModelOnly" class="text-danger"></div><div class="form-floating mb-4"><input asp-for="Otp" class="form-control otp-input" placeholder="Code" autocomplete="one-time-code" inputmode="numeric"/><label asp-for="Otp"></label><span asp-validation-for="Otp" class="text-danger"></span></div><button class="btn btn-primary w-100 btn-lg" type="submit">Create account</button></form></div></section>
+@section Scripts { <partial name="_ValidationScriptsPartial"/> }

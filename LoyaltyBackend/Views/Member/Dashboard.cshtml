@@ -1,0 +1,53 @@
+@model DashboardViewModel
+@{
+    ViewData["Title"] = "Member home";
+}
+
+<section class="page-heading"><div><span class="eyebrow">Member home</span><h1>Hello, @Model.Member.Name.Split(' ')[0]</h1><p>Here is your loyalty snapshot today.</p></div><a class="btn btn-outline-dark" asp-action="Profile">Manage profile</a></section>
+
+<section class="dashboard-grid">
+    <div class="loyalty-card">
+        <div class="d-flex justify-content-between"><span class="card-brand">EDUVO</span><span class="tier-pill">@Model.Member.Tier</span></div>
+        <div class="member-name">@Model.Member.Name</div>
+        <div class="member-code">@Model.Member.MemberCode</div>
+        <div class="balance-row"><div><small>Wallet</small><strong>RM @Model.Member.WalletBalance.ToString("N2")</strong></div><div><small>Points</small><strong>@Model.Member.Points.ToString("N0")</strong></div><div><small>Stamps</small><strong>@Model.Member.Stamps</strong></div></div>
+    </div>
+    <div class="qr-card">
+        <img class="member-qr" src="@Url.Action("MemberQr", "Member")" alt="Member QR code" />
+        <div><h2>Member QR</h2><p>Show this screen at the counter to earn or redeem.</p><small>Encoded from your registered phone number</small></div>
+    </div>
+</section>
+
+@if (Model.Highlights.Count > 0)
+{
+    <section class="highlight-strip" aria-label="Member promotions">
+        @foreach (var item in Model.Highlights)
+        {
+            <article><span class="eyebrow">@item.Subtitle</span><h2>@item.Title</h2><p>@item.Description</p>@if (!string.IsNullOrWhiteSpace(item.Link)) { <a class="btn btn-light" href="@item.Link" rel="noopener noreferrer">@(item.ButtonText ?? "Learn more")</a> }</article>
+        }
+    </section>
+}
+
+<section class="content-section">
+    <div class="section-title"><div><span class="eyebrow">Discover</span><h2>Featured rewards</h2></div><a asp-action="Rewards">View all</a></div>
+    <div class="reward-grid">
+        @foreach (var reward in Model.FeaturedRewards)
+        {
+            <article class="reward-card"><span class="reward-category">@reward.Category</span><h3>@reward.Name</h3><p>@reward.Description</p><strong>@reward.Points points</strong></article>
+        }
+    </div>
+</section>
+
+<section class="content-section">
+    <div class="section-title"><div><span class="eyebrow">Latest</span><h2>Recent activity</h2></div><a asp-action="History">Full history</a></div>
+    <div class="activity-list">
+        @if (Model.RecentActivity.Count == 0)
+        {
+            <div class="empty-state">No activity yet. Your counter transactions will appear here.</div>
+        }
+        @foreach (var item in Model.RecentActivity)
+        {
+            <div class="activity-item"><span class="activity-badge">@item.Type[0]</span><div><strong>@item.Description</strong><small>@item.OccurredAt.ToString("dd MMM yyyy, h:mm tt")</small></div><div class="activity-value">@(item.Amount is not null ? $"{item.Amount:+0.00;-0.00} RM" : item.Points is not null ? $"+{item.Points} pts" : "Added")</div></div>
+        }
+    </div>
+</section>

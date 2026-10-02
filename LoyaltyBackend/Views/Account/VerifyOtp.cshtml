@@ -1,0 +1,22 @@
+@model VerifyOtpViewModel
+@{ ViewData["Title"] = "Verify phone"; }
+
+<section class="auth-shell">
+    <div class="auth-copy"><span class="eyebrow">Check your phone</span><h1>Enter your verification code.</h1><p>The code was requested for <strong>@Model.PhoneNumber</strong>.</p></div>
+    <div class="form-card">
+        <h2>Verify your phone</h2>
+        <form method="post">
+            <input asp-for="PhoneNumber" type="hidden" />
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+            <div class="form-floating mb-4">
+                <input asp-for="Otp" class="form-control otp-input" placeholder="Code" autocomplete="one-time-code" inputmode="numeric" autofocus />
+                <label asp-for="Otp"></label>
+                <span asp-validation-for="Otp" class="text-danger"></span>
+            </div>
+            <button class="btn btn-primary w-100 btn-lg" type="submit">Verify and log in</button>
+        </form>
+        <p class="form-foot"><a asp-action="PhoneLogin">Request another code</a></p>
+    </div>
+</section>
+
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

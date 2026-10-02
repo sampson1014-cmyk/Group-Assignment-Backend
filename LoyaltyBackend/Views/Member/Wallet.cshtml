@@ -1,0 +1,9 @@
+@model MemberSummary
+@{ ViewData["Title"] = "Wallet"; }
+<section class="page-heading"><div><span class="eyebrow">Your wallet</span><h1>Balances and benefits</h1><p>Everything you have earned in one place.</p></div></section>
+<div class="stat-grid">
+    <article><small>Wallet balance</small><strong>RM @Model.WalletBalance.ToString("N2")</strong><span>For eligible counter payments</span></article>
+    <article><small>Available points</small><strong>@Model.Points.ToString("N0")</strong><span>Expires @(Model.PointsExpireAt?.ToString("dd MMM yyyy") ?? "—")</span></article>
+    <article><small>Current stamps</small><strong>@Model.Stamps</strong><span>Keep visiting to complete your card</span></article>
+</div>
+<div class="info-panel"><h2>How your wallet works</h2><p>Wallet top-ups, points and stamps are recorded by staff at the counter. Your balances update here after the transaction is completed.</p><div class="d-flex flex-wrap gap-2"><a class="btn btn-primary" asp-action="History">View wallet activity</a><a class="btn btn-outline-dark" asp-action="History" asp-route-type="Top-up">Top-up history</a></div></div>

@@ -1,0 +1,7 @@
+@{ ViewData["Title"] = "Service temporarily unavailable"; }
+<section class="service-error">
+    <span class="eyebrow">Temporary interruption</span>
+    <h1>We could not reach the loyalty service.</h1>
+    <p>Your account has not been changed. Please wait a moment and try again.</p>
+    <div class="d-flex flex-wrap gap-2"><a class="btn btn-primary" asp-controller="Home" asp-action="Index">Return home</a><button class="btn btn-outline-dark" type="button" onclick="location.reload()">Try again</button></div>
+</section>

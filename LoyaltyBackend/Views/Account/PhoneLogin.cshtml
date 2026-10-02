@@ -1,0 +1,21 @@
+@model PhoneLoginViewModel
+@{ ViewData["Title"] = "Phone login"; }
+
+<section class="auth-shell">
+    <div class="auth-copy"><span class="eyebrow">Secure sign-in</span><h1>Use your member phone.</h1><p>We will send a one-time verification code to the phone number registered with your loyalty account.</p></div>
+    <div class="form-card">
+        <h2>Phone login</h2>
+        <form method="post">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+            <div class="form-floating mb-4">
+                <input asp-for="PhoneNumber" class="form-control" placeholder="+60123456789" autocomplete="tel" />
+                <label asp-for="PhoneNumber"></label>
+                <span asp-validation-for="PhoneNumber" class="text-danger"></span>
+            </div>
+            <button class="btn btn-primary w-100 btn-lg" type="submit">Send verification code</button>
+        </form>
+        <p class="form-foot"><a asp-action="Login">Use email and password instead</a></p>
+    </div>
+</section>
+
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

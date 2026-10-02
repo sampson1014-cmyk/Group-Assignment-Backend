@@ -1,0 +1,13 @@
+@model StampsViewModel
+@{ ViewData["Title"] = "Stamp cards"; }
+<section class="page-heading"><div><span class="eyebrow">Stamp cards</span><h1>Every visit adds up</h1><p>Track current stamp campaigns and stamps you have already used.</p></div></section>
+<div class="section-title"><h2>Active cards</h2></div>
+@if (Model.Active.Count == 0) { <div class="empty-state panel">You do not have an active stamp card yet.</div> }
+<div class="stamp-grid">
+@foreach (var stamp in Model.Active) { <article class="stamp-card"><span class="reward-category">@stamp.Status</span><h2>@stamp.Name</h2><p>@stamp.Description</p><div class="stamp-count"><strong>@stamp.Stamps</strong><span>stamps</span></div><small>@(stamp.Date?.ToString("dd MMM yyyy") ?? "")</small></article> }
+</div>
+<div class="section-title mt-5"><h2>Used stamps</h2></div>
+@if (Model.Used.Count == 0) { <div class="empty-state panel">No used stamps to show.</div> }
+<div class="activity-list">
+@foreach (var stamp in Model.Used) { <div class="activity-item"><span class="activity-badge">S</span><div><strong>@stamp.Name</strong><small>@stamp.Description</small></div><div class="activity-value">@stamp.Stamps used</div></div> }
+</div>

@@ -1,7 +1,49 @@
+using LoyaltyBackend.Services;
+using LoyaltyBackend.Infrastructure;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
+
 var builder = WebApplication.CreateBuilder(args);
 
+// The provider's JWT endpoint requires credentials in its query string.
+// Prevent the default HttpClient logger from writing that URL to application logs.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.LoyaltyApi", LogLevel.Warning);
+
 // Add services to the container.
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews(options => options.Filters.Add<ApiExceptionFilter>());
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("account", limiter =>
+    {
+        limiter.PermitLimit = 10;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
+    });
+});
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Account/Login";
+        options.AccessDeniedPath = "/Account/Login";
+        options.Cookie.Name = "Eduvo.Member";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+    });
+
+builder.Services.Configure<LoyaltyApiOptions>(builder.Configuration.GetSection(LoyaltyApiOptions.SectionName));
+builder.Services.AddHttpClient("LoyaltyApi", client => client.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddSingleton<ILoyaltyTokenProvider, LoyaltyTokenProvider>();
+builder.Services.AddTransient<ILoyaltyApiClient, LoyaltyApiClient>();
+builder.Services.AddTransient<ILoyaltyMemberService, LoyaltyMemberService>();
+builder.Services.AddTransient<ILoyaltyFeatureService, LoyaltyFeatureService>();
 
 var app = builder.Build();
 
@@ -18,10 +60,14 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+app.UseRateLimiter();
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.Run();
