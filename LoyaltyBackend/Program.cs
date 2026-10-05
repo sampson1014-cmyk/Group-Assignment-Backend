@@ -6,6 +6,17 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Load the project's development credentials explicitly. Visual Studio normally
+// adds this provider automatically, but doing it here keeps every launch profile
+// consistent while the values remain outside source control.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddUserSecrets(typeof(Program).Assembly, optional: true, reloadOnChange: true);
+    // Local fallback for IDEs that do not resolve the User Secrets provider.
+    // This file is excluded by .gitignore and must never be committed.
+    builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+}
+
 // The provider's JWT endpoint requires credentials in its query string.
 // Prevent the default HttpClient logger from writing that URL to application logs.
 builder.Logging.AddFilter("System.Net.Http.HttpClient.LoyaltyApi", LogLevel.Warning);
