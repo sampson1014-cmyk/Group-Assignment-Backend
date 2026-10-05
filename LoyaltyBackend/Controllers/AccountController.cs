@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -13,8 +14,17 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace LoyaltyBackend.Controllers;
 
 [EnableRateLimiting("account")]
-public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Controller
+public sealed class AccountController(
+    ILoyaltyApiClient loyaltyApiClient,
+    IWebHostEnvironment environment) : Controller
 {
+    private const string PhoneLoginChallengeKey = "Account.PhoneLoginChallenge";
+    private const string PendingRegistrationKey = "Account.PendingRegistration";
+    private const string PendingRegistrationOtpKey = "Account.PendingRegistrationOtp";
+    private const string ResetPhoneKey = "Account.ResetPhone";
+    private const string ResetOtpKey = "Account.ResetOtp";
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     [AllowAnonymous]
     public IActionResult Login(string? returnUrl = null)
     {
@@ -41,7 +51,7 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
             return View(model);
         }
 
-        var member = await response.Content.ReadFromJsonAsync<MemberDetailsResponse>(cancellationToken: HttpContext.RequestAborted);
+        var member = await ReadMemberResponseAsync(response, HttpContext.RequestAborted);
         if (member is null)
         {
             ModelState.AddModelError(string.Empty, "The member profile could not be loaded.");
@@ -79,9 +89,10 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
             return View(model);
         }
 
+        var deviceId = GetOrCreateDeviceId();
         using var response = await loyaltyApiClient.PostAsync(
             "api/MemberAccount/RequestOTP",
-            new RequestOtpRequest(model.PhoneNumber),
+            new RequestOtpRequest(model.PhoneNumber, deviceId),
             HttpContext.RequestAborted);
 
         if (!response.IsSuccessStatusCode)
@@ -90,59 +101,85 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
             return View(model);
         }
 
-        TempData["OtpPhoneNumber"] = model.PhoneNumber;
+        var challenge = await ReadOtpResponseAsync(response, model.PhoneNumber, deviceId, HttpContext.RequestAborted);
+        if (challenge is null)
+        {
+            ModelState.AddModelError(string.Empty, "The verification service returned an unsupported response.");
+            return View(model);
+        }
+
+        HttpContext.Session.SetString(PhoneLoginChallengeKey, JsonSerializer.Serialize(challenge));
         return RedirectToAction(nameof(VerifyOtp));
     }
 
     [AllowAnonymous]
     public IActionResult VerifyOtp()
     {
-        var phoneNumber = TempData.Peek("OtpPhoneNumber") as string;
-        if (string.IsNullOrWhiteSpace(phoneNumber))
+        var challenge = GetSessionJson<OtpResponse>(PhoneLoginChallengeKey);
+        if (challenge is null || string.IsNullOrWhiteSpace(challenge.PhoneNumber))
         {
             return RedirectToAction(nameof(PhoneLogin));
         }
 
-        return View(new VerifyOtpViewModel { PhoneNumber = phoneNumber });
+        if (environment.IsDevelopment()) ViewData["OtpHint"] = NormalizeOtp(challenge.Otp);
+        return View(new VerifyOtpViewModel { PhoneNumber = challenge.PhoneNumber });
     }
 
     [HttpPost, AllowAnonymous, ValidateAntiForgeryToken]
     public async Task<IActionResult> VerifyOtp(VerifyOtpViewModel model)
     {
+        var challenge = GetSessionJson<OtpResponse>(PhoneLoginChallengeKey);
+        if (challenge is null || string.IsNullOrWhiteSpace(challenge.PhoneNumber))
+        {
+            return RedirectToAction(nameof(PhoneLogin));
+        }
+        model.PhoneNumber = challenge.PhoneNumber;
         if (!ModelState.IsValid)
         {
+            if (environment.IsDevelopment()) ViewData["OtpHint"] = NormalizeOtp(challenge.Otp);
             return View(model);
+        }
+
+        var firstLogin = bool.TryParse(challenge.FirstLogin, out var parsedFirstLogin) && parsedFirstLogin;
+        var deviceId = string.IsNullOrWhiteSpace(challenge.DeviceId) ? GetOrCreateDeviceId() : challenge.DeviceId;
+        if (firstLogin)
+        {
+            using var deviceResponse = await loyaltyApiClient.PostAsync(
+                "api/MemberLogin/UpdateDeviceId",
+                new ChangeDeviceRequest(model.PhoneNumber, deviceId),
+                HttpContext.RequestAborted);
+            if (!deviceResponse.IsSuccessStatusCode)
+            {
+                if (environment.IsDevelopment()) ViewData["OtpHint"] = NormalizeOtp(challenge.Otp);
+                ModelState.AddModelError(string.Empty, "We could not register this browser for first-time login.");
+                return View(model);
+            }
         }
 
         using var response = await loyaltyApiClient.PostAsync(
             "api/MemberLogin/MemberMobileLoginGetProfile",
-            new PhoneLoginRequest(model.PhoneNumber, model.Otp, false, null, "Active"),
+            new PhoneLoginRequest(model.PhoneNumber, model.Otp, firstLogin, deviceId, challenge.AccountStatus),
             HttpContext.RequestAborted);
 
         if (!response.IsSuccessStatusCode)
         {
+            if (environment.IsDevelopment()) ViewData["OtpHint"] = NormalizeOtp(challenge.Otp);
             ModelState.AddModelError(nameof(model.Otp), "The verification code is invalid or expired.");
             return View(model);
         }
 
-        MemberDetailsResponse? member;
-        try
-        {
-            member = await response.Content.ReadFromJsonAsync<MemberDetailsResponse>(cancellationToken: HttpContext.RequestAborted);
-        }
-        catch (JsonException)
-        {
-            member = null;
-        }
+        var member = await ReadMemberResponseAsync(response, HttpContext.RequestAborted);
 
         if (member is null)
         {
+            if (environment.IsDevelopment()) ViewData["OtpHint"] = NormalizeOtp(challenge.Otp);
             ModelState.AddModelError(nameof(model.Otp), "The member profile could not be loaded.");
             return View(model);
         }
 
         if (!string.Equals(member.AccountStatus, "Active", StringComparison.OrdinalIgnoreCase))
         {
+            if (environment.IsDevelopment()) ViewData["OtpHint"] = NormalizeOtp(challenge.Otp);
             ModelState.AddModelError(string.Empty, "This member account is not active. Please contact support.");
             return View(model);
         }
@@ -152,7 +189,7 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
             member.UserId ?? model.PhoneNumber,
             member.PhoneNumber ?? model.PhoneNumber,
             rememberMe: false);
-        TempData.Remove("OtpPhoneNumber");
+        HttpContext.Session.Remove(PhoneLoginChallengeKey);
         return RedirectToAction("Dashboard", "Member");
     }
 
@@ -165,6 +202,26 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
         if (!ModelState.IsValid)
         {
             return View(model);
+        }
+
+        using (var phoneResponse = await loyaltyApiClient.PostAsync(
+                   "api/ManageMember/FindMemberByPhone",
+                   new PhoneNumberRequest(model.PhoneNumber),
+                   HttpContext.RequestAborted))
+        using (var emailResponse = await loyaltyApiClient.PostAsync(
+                   "api/ManageMember/FindMemberByEmail",
+                   new EmailRequest(model.Email),
+                   HttpContext.RequestAborted))
+        {
+            if (await HasMemberRecordAsync(phoneResponse, HttpContext.RequestAborted))
+            {
+                ModelState.AddModelError(nameof(model.PhoneNumber), "This phone number is already registered.");
+            }
+            if (await HasMemberRecordAsync(emailResponse, HttpContext.RequestAborted))
+            {
+                ModelState.AddModelError(nameof(model.Email), "This email address is already registered.");
+            }
+            if (!ModelState.IsValid) return View(model);
         }
 
         if (!string.IsNullOrWhiteSpace(model.ReferralCode))
@@ -181,9 +238,10 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
             }
         }
 
+        var deviceId = GetOrCreateDeviceId();
         using var otpResponse = await loyaltyApiClient.PostAsync(
             "api/MemberAccount/RegisterOtp",
-            new RequestOtpRequest(model.PhoneNumber),
+            new RequestOtpRequest(model.PhoneNumber, deviceId),
             HttpContext.RequestAborted);
         if (!otpResponse.IsSuccessStatusCode)
         {
@@ -191,24 +249,25 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
             return View(model);
         }
 
-        var otpBody = await otpResponse.Content.ReadAsStringAsync(HttpContext.RequestAborted);
-        var normalizedOtp = NormalizeOtp(otpBody);
+        var otpResult = await ReadOtpResponseAsync(otpResponse, model.PhoneNumber, deviceId, HttpContext.RequestAborted);
+        var normalizedOtp = NormalizeOtp(otpResult?.Otp);
         if (string.IsNullOrWhiteSpace(normalizedOtp))
         {
             ModelState.AddModelError(string.Empty, "The registration service did not return a usable verification challenge.");
             return View(model);
         }
 
-        TempData["PendingRegistration"] = JsonSerializer.Serialize(model);
-        TempData["PendingRegistrationOtp"] = normalizedOtp;
+        HttpContext.Session.SetString(PendingRegistrationKey, JsonSerializer.Serialize(model));
+        HttpContext.Session.SetString(PendingRegistrationOtpKey, normalizedOtp);
         return RedirectToAction(nameof(VerifyRegistration));
     }
 
     [AllowAnonymous]
     public IActionResult VerifyRegistration()
     {
-        var json = TempData.Peek("PendingRegistration") as string;
+        var json = HttpContext.Session.GetString(PendingRegistrationKey);
         var registration = string.IsNullOrWhiteSpace(json) ? null : JsonSerializer.Deserialize<RegisterViewModel>(json);
+        if (environment.IsDevelopment()) ViewData["OtpHint"] = HttpContext.Session.GetString(PendingRegistrationOtpKey);
         return registration is null
             ? RedirectToAction(nameof(Register))
             : View(new OtpChallengeViewModel { PhoneNumber = registration.PhoneNumber });
@@ -217,13 +276,14 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
     [HttpPost, AllowAnonymous, ValidateAntiForgeryToken]
     public async Task<IActionResult> VerifyRegistration(OtpChallengeViewModel model)
     {
-        var json = TempData.Peek("PendingRegistration") as string;
-        var expectedOtp = TempData.Peek("PendingRegistrationOtp") as string;
+        var json = HttpContext.Session.GetString(PendingRegistrationKey);
+        var expectedOtp = HttpContext.Session.GetString(PendingRegistrationOtpKey);
         var registration = string.IsNullOrWhiteSpace(json) ? null : JsonSerializer.Deserialize<RegisterViewModel>(json);
         if (registration is null || string.IsNullOrWhiteSpace(expectedOtp)) return RedirectToAction(nameof(Register));
         if (!ModelState.IsValid) return View(model);
         if (!string.Equals(NormalizeOtp(model.Otp), expectedOtp, StringComparison.Ordinal))
         {
+            if (environment.IsDevelopment()) ViewData["OtpHint"] = expectedOtp;
             ModelState.AddModelError(nameof(model.Otp), "The verification code is invalid.");
             return View(model);
         }
@@ -242,8 +302,8 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
             return View(model);
         }
 
-        TempData.Remove("PendingRegistration");
-        TempData.Remove("PendingRegistrationOtp");
+        HttpContext.Session.Remove(PendingRegistrationKey);
+        HttpContext.Session.Remove(PendingRegistrationOtpKey);
         TempData["StatusMessage"] = "Your member account was created. You can now log in.";
         return RedirectToAction(nameof(Login));
     }
@@ -255,27 +315,30 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
     public async Task<IActionResult> ForgotPassword(ForgotPasswordViewModel model)
     {
         if (!ModelState.IsValid) return View(model);
-        using var response = await loyaltyApiClient.PostAsync("api/MemberAccount/RequestOTP", new RequestOtpRequest(model.PhoneNumber), HttpContext.RequestAborted);
+        var deviceId = GetOrCreateDeviceId();
+        using var response = await loyaltyApiClient.PostAsync("api/MemberAccount/RequestOTP", new RequestOtpRequest(model.PhoneNumber, deviceId), HttpContext.RequestAborted);
         if (!response.IsSuccessStatusCode)
         {
             ModelState.AddModelError(string.Empty, "We could not send a reset code.");
             return View(model);
         }
-        var otp = NormalizeOtp(await response.Content.ReadAsStringAsync(HttpContext.RequestAborted));
+        var otpResult = await ReadOtpResponseAsync(response, model.PhoneNumber, deviceId, HttpContext.RequestAborted);
+        var otp = NormalizeOtp(otpResult?.Otp);
         if (string.IsNullOrWhiteSpace(otp))
         {
             ModelState.AddModelError(string.Empty, "The password service did not return a usable verification challenge.");
             return View(model);
         }
-        TempData["ResetPhone"] = model.PhoneNumber;
-        TempData["ResetOtp"] = otp;
+        HttpContext.Session.SetString(ResetPhoneKey, model.PhoneNumber);
+        HttpContext.Session.SetString(ResetOtpKey, otp);
         return RedirectToAction(nameof(ResetPassword));
     }
 
     [AllowAnonymous]
     public IActionResult ResetPassword()
     {
-        var phone = TempData.Peek("ResetPhone") as string;
+        var phone = HttpContext.Session.GetString(ResetPhoneKey);
+        if (environment.IsDevelopment()) ViewData["OtpHint"] = HttpContext.Session.GetString(ResetOtpKey);
         return string.IsNullOrWhiteSpace(phone)
             ? RedirectToAction(nameof(ForgotPassword))
             : View(new ResetPasswordViewModel { PhoneNumber = phone });
@@ -284,11 +347,13 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
     [HttpPost, AllowAnonymous, ValidateAntiForgeryToken]
     public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
     {
-        var expectedOtp = TempData.Peek("ResetOtp") as string;
+        var expectedOtp = HttpContext.Session.GetString(ResetOtpKey);
         if (string.IsNullOrWhiteSpace(expectedOtp)) return RedirectToAction(nameof(ForgotPassword));
+        model.PhoneNumber = HttpContext.Session.GetString(ResetPhoneKey) ?? model.PhoneNumber;
         if (!ModelState.IsValid) return View(model);
         if (!string.Equals(NormalizeOtp(model.Otp), expectedOtp, StringComparison.Ordinal))
         {
+            if (environment.IsDevelopment()) ViewData["OtpHint"] = expectedOtp;
             ModelState.AddModelError(nameof(model.Otp), "The verification code is invalid.");
             return View(model);
         }
@@ -298,8 +363,8 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
             ModelState.AddModelError(string.Empty, "The password could not be reset.");
             return View(model);
         }
-        TempData.Remove("ResetPhone");
-        TempData.Remove("ResetOtp");
+        HttpContext.Session.Remove(ResetPhoneKey);
+        HttpContext.Session.Remove(ResetOtpKey);
         TempData["StatusMessage"] = "Your password was reset. Log in with the new password.";
         return RedirectToAction(nameof(Login));
     }
@@ -330,9 +395,114 @@ public sealed class AccountController(ILoyaltyApiClient loyaltyApiClient) : Cont
             new AuthenticationProperties { IsPersistent = rememberMe });
     }
 
-    private static string NormalizeOtp(string value)
+    private string GetOrCreateDeviceId()
     {
-        var digits = Regex.Replace(value ?? string.Empty, "[^0-9]", string.Empty);
-        return digits.Length is >= 4 and <= 10 ? digits : string.Empty;
+        const string cookieName = "Eduvo.DeviceId";
+        if (Request.Cookies.TryGetValue(cookieName, out var existing) && Guid.TryParse(existing, out _))
+        {
+            return existing;
+        }
+
+        var deviceId = Guid.NewGuid().ToString();
+        Response.Cookies.Append(cookieName, deviceId, new CookieOptions
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = Request.IsHttps,
+            MaxAge = TimeSpan.FromDays(365)
+        });
+        return deviceId;
+    }
+
+    private T? GetSessionJson<T>(string key)
+    {
+        var json = HttpContext.Session.GetString(key);
+        return string.IsNullOrWhiteSpace(json) ? default : JsonSerializer.Deserialize<T>(json, JsonOptions);
+    }
+
+    private static async Task<OtpResponse?> ReadOtpResponseAsync(
+        HttpResponseMessage response,
+        string fallbackPhone,
+        string fallbackDeviceId,
+        CancellationToken cancellationToken)
+    {
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        try
+        {
+            var result = JsonSerializer.Deserialize<OtpResponse>(body, JsonOptions);
+            if (result is not null)
+            {
+                return result with
+                {
+                    PhoneNumber = string.IsNullOrWhiteSpace(result.PhoneNumber) ? fallbackPhone : result.PhoneNumber,
+                    DeviceId = string.IsNullOrWhiteSpace(result.DeviceId) ? fallbackDeviceId : result.DeviceId
+                };
+            }
+        }
+        catch (JsonException)
+        {
+            // Some provider operations return the OTP as a plain string instead of JSON.
+        }
+
+        var plainOtp = NormalizeOtp(body);
+        return string.IsNullOrWhiteSpace(plainOtp)
+            ? null
+            : new OtpResponse(fallbackPhone, plainOtp, null, fallbackDeviceId, null);
+    }
+
+    private static async Task<MemberDetailsResponse?> ReadMemberResponseAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        var body = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+        if (string.IsNullOrWhiteSpace(body) || body is "null" or "{}" or "[]") return null;
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var memberJson = document.RootElement.ValueKind == JsonValueKind.Array
+                ? document.RootElement.GetArrayLength() == 0 ? null : document.RootElement[0].GetRawText()
+                : document.RootElement.GetRawText();
+            return memberJson is null
+                ? null
+                : JsonSerializer.Deserialize<MemberDetailsResponse>(memberJson, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<bool> HasMemberRecordAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.StatusCode == HttpStatusCode.NotFound) return false;
+        response.EnsureSuccessStatusCode();
+        var body = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+        if (string.IsNullOrWhiteSpace(body) || body is "null" or "{}" or "[]") return false;
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var record = document.RootElement.ValueKind == JsonValueKind.Array
+                ? document.RootElement.GetArrayLength() == 0 ? default : document.RootElement[0]
+                : document.RootElement;
+            if (record.ValueKind != JsonValueKind.Object) return false;
+            return HasValue(record, "PhoneNumber") || HasValue(record, "Email") || HasValue(record, "UserId") ||
+                   (record.TryGetProperty("Id", out var id) && id.TryGetInt32(out var numericId) && numericId > 0);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasValue(JsonElement record, string propertyName) =>
+        record.TryGetProperty(propertyName, out var value) &&
+        value.ValueKind == JsonValueKind.String &&
+        !string.IsNullOrWhiteSpace(value.GetString());
+
+    private static string NormalizeOtp(string? value)
+    {
+        var candidate = (value ?? string.Empty).Trim().Trim('"');
+        return Regex.IsMatch(candidate, @"^\d{4,10}$") ? candidate : string.Empty;
     }
 }

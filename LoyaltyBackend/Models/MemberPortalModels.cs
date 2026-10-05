@@ -24,7 +24,7 @@ public sealed class VerifyOtpViewModel
     [Required]
     public string PhoneNumber { get; set; } = string.Empty;
 
-    [Required, StringLength(10, MinimumLength = 4), Display(Name = "Verification code")]
+    [Required, RegularExpression(@"^\d{6}$", ErrorMessage = "Enter the six-digit verification code."), Display(Name = "Verification code")]
     public string Otp { get; set; } = string.Empty;
 }
 
@@ -57,7 +57,7 @@ public class OtpChallengeViewModel
     [Required]
     public string PhoneNumber { get; set; } = string.Empty;
 
-    [Required, StringLength(10, MinimumLength = 4), Display(Name = "Verification code")]
+    [Required, RegularExpression(@"^\d{6}$", ErrorMessage = "Enter the six-digit verification code."), Display(Name = "Verification code")]
     public string Otp { get; set; } = string.Empty;
 }
 
@@ -69,7 +69,7 @@ public sealed class ForgotPasswordViewModel
 
 public sealed class ResetPasswordViewModel : OtpChallengeViewModel
 {
-    [Required, DataType(DataType.Password), MinLength(6), Display(Name = "New password")]
+    [Required, DataType(DataType.Password), MinLength(8), Display(Name = "New password")]
     public string NewPassword { get; set; } = string.Empty;
 
     [Required, DataType(DataType.Password), Compare(nameof(NewPassword)), Display(Name = "Confirm password")]

@@ -38,6 +38,13 @@ public sealed record EmailLoginRequest(
 public sealed record PhoneNumberRequest(
     [property: JsonPropertyName("PhoneNumber")] string PhoneNumber);
 
+public sealed record EmailRequest(
+    [property: JsonPropertyName("Email")] string Email);
+
+public sealed record ChangeDeviceRequest(
+    [property: JsonPropertyName("PhoneNumber")] string PhoneNumber,
+    [property: JsonPropertyName("DeviceId")] string DeviceId);
+
 public sealed record MemberDetailsResponse(
     string? UserId,
     string? Name,

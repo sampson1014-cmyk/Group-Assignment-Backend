@@ -12,6 +12,18 @@ builder.Logging.AddFilter("System.Net.Http.HttpClient.LoyaltyApi", LogLevel.Warn
 
 // Add services to the container.
 builder.Services.AddControllersWithViews(options => options.Filters.Add<ApiExceptionFilter>());
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.Cookie.Name = "Eduvo.Member.Flow";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
+    options.IdleTimeout = TimeSpan.FromMinutes(10);
+});
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -61,6 +73,7 @@ app.UseStaticFiles();
 app.UseRouting();
 
 app.UseRateLimiter();
+app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
 

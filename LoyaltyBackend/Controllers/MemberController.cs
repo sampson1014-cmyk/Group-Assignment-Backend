@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using QRCoder;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace LoyaltyBackend.Controllers;
@@ -13,8 +14,12 @@ namespace LoyaltyBackend.Controllers;
 [Authorize(Roles = "Member")]
 public sealed class MemberController(
     ILoyaltyMemberService loyaltyMembers,
-    ILoyaltyFeatureService features) : Controller
+    ILoyaltyFeatureService features,
+    IWebHostEnvironment environment) : Controller
 {
+    private const string EmailVerificationOtpKey = "Member.EmailVerificationOtp";
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     public async Task<IActionResult> Dashboard()
     {
         var member = await GetMemberSummaryAsync();
@@ -60,6 +65,8 @@ public sealed class MemberController(
     public async Task<IActionResult> NotificationDetails(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
+        var memberNotifications = await features.GetNotificationsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
+        if (!memberNotifications.Any(item => string.Equals(item.Id, id, StringComparison.Ordinal))) return NotFound();
         var notification = await features.GetNotificationAsync(id, HttpContext.RequestAborted);
         if (notification is null) return NotFound();
         return View(notification);
@@ -107,6 +114,8 @@ public sealed class MemberController(
     public async Task<IActionResult> TopUpDetails(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
+        var memberTopUps = await features.GetHistoryAsync(GetRequiredPhoneNumber(), "Top-up", HttpContext.RequestAborted);
+        if (!memberTopUps.Any(item => string.Equals(item.ReferenceId, id, StringComparison.Ordinal))) return NotFound();
         var activity = await features.GetTopUpDetailsAsync(id, HttpContext.RequestAborted);
         return activity is null ? NotFound() : View("ActivityDetails", activity);
     }
@@ -123,9 +132,13 @@ public sealed class MemberController(
         return Content(qr.GetGraphic(6), "image/svg+xml");
     }
 
-    public IActionResult RewardQr(string id)
+    public async Task<IActionResult> RewardQr(string id)
     {
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
+        var memberItems = await features.GetRewardsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
+        var ownsItem = memberItems.OwnedRewards.Concat(memberItems.OwnedVouchers)
+            .Any(item => string.Equals(item.RewardId, id, StringComparison.Ordinal));
+        if (!ownsItem) return NotFound();
         using var generator = new QRCodeGenerator();
         using var data = generator.CreateQrCode(id, QRCodeGenerator.ECCLevel.Q);
         var qr = new SvgQRCode(data);
@@ -181,7 +194,12 @@ public sealed class MemberController(
         return RedirectToAction(nameof(Profile));
     }
 
-    public IActionResult VerifyEmail() => View(new OtpChallengeViewModel { PhoneNumber = GetRequiredPhoneNumber() });
+    public IActionResult VerifyEmail()
+    {
+        ViewData["VerificationRequested"] = HttpContext.Session.GetString(EmailVerificationOtpKey) is not null;
+        if (environment.IsDevelopment()) ViewData["OtpHint"] = HttpContext.Session.GetString(EmailVerificationOtpKey);
+        return View(new OtpChallengeViewModel { PhoneNumber = GetRequiredPhoneNumber() });
+    }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> RequestEmailVerification(OtpChallengeViewModel model)
@@ -194,13 +212,16 @@ public sealed class MemberController(
             TempData["ErrorMessage"] = "The verification email could not be sent.";
             return RedirectToAction(nameof(Profile));
         }
-        var digits = Regex.Replace(await response.Content.ReadAsStringAsync(HttpContext.RequestAborted), "[^0-9]", string.Empty);
-        if (digits.Length is < 4 or > 10)
+        var body = await response.Content.ReadAsStringAsync(HttpContext.RequestAborted);
+        var otp = ReadOtp(body);
+        if (string.IsNullOrWhiteSpace(otp))
         {
             TempData["ErrorMessage"] = "The email verification service returned an unsupported response.";
             return RedirectToAction(nameof(Profile));
         }
-        TempData["EmailVerificationOtp"] = digits;
+        HttpContext.Session.SetString(EmailVerificationOtpKey, otp);
+        ViewData["VerificationRequested"] = true;
+        if (environment.IsDevelopment()) ViewData["OtpHint"] = otp;
         return View("VerifyEmail", model);
     }
 
@@ -208,16 +229,18 @@ public sealed class MemberController(
     public async Task<IActionResult> VerifyEmail(OtpChallengeViewModel model)
     {
         model.PhoneNumber = GetRequiredPhoneNumber();
-        var expected = TempData.Peek("EmailVerificationOtp") as string;
-        if (!ModelState.IsValid || !string.Equals(Regex.Replace(model.Otp ?? string.Empty, "[^0-9]", string.Empty), expected, StringComparison.Ordinal))
+        var expected = HttpContext.Session.GetString(EmailVerificationOtpKey);
+        if (!ModelState.IsValid || !string.Equals(model.Otp, expected, StringComparison.Ordinal))
         {
+            ViewData["VerificationRequested"] = true;
+            if (environment.IsDevelopment()) ViewData["OtpHint"] = expected;
             ModelState.AddModelError(nameof(model.Otp), "The verification code is invalid.");
             return View(model);
         }
         using var response = await HttpContext.RequestServices.GetRequiredService<ILoyaltyApiClient>().PostAsync(
             "api/MemberAccount/UpdateAccountVerify", new { PhoneNumber = model.PhoneNumber, Type = "Email" }, HttpContext.RequestAborted);
         response.EnsureSuccessStatusCode();
-        TempData.Remove("EmailVerificationOtp");
+        HttpContext.Session.Remove(EmailVerificationOtpKey);
         TempData["StatusMessage"] = "Your email was verified.";
         return RedirectToAction(nameof(Profile));
     }
@@ -250,4 +273,20 @@ public sealed class MemberController(
     private string GetRequiredPhoneNumber() =>
         User.FindFirstValue(ClaimTypes.MobilePhone)
         ?? throw new InvalidOperationException("The signed-in member does not have a phone-number claim.");
+
+    private static string ReadOtp(string body)
+    {
+        try
+        {
+            var result = JsonSerializer.Deserialize<OtpResponse>(body, JsonOptions);
+            if (result?.Otp is { Length: > 0 } && Regex.IsMatch(result.Otp, @"^\d{4,10}$")) return result.Otp;
+        }
+        catch (JsonException)
+        {
+            // The provider may return a plain OTP rather than an object.
+        }
+
+        var candidate = body.Trim().Trim('"');
+        return Regex.IsMatch(candidate, @"^\d{4,10}$") ? candidate : string.Empty;
+    }
 }
