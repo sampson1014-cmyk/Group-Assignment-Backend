@@ -6,12 +6,13 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load the project's development credentials explicitly. Visual Studio normally
-// adds this provider automatically, but doing it here keeps every launch profile
-// consistent while the values remain outside source control.
+// Keep local API credentials available for every launch profile, including when
+// the compiled application is started directly. The values remain outside source
+// control in .NET User Secrets.
+builder.Configuration.AddUserSecrets(typeof(Program).Assembly, optional: true, reloadOnChange: true);
+
 if (builder.Environment.IsDevelopment())
 {
-    builder.Configuration.AddUserSecrets(typeof(Program).Assembly, optional: true, reloadOnChange: true);
     // Local fallback for IDEs that do not resolve the User Secrets provider.
     // This file is excluded by .gitignore and must never be committed.
     builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
@@ -30,9 +31,9 @@ builder.Services.AddSession(options =>
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
     options.Cookie.SameSite = SameSiteMode.Lax;
-    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
-        ? CookieSecurePolicy.SameAsRequest
-        : CookieSecurePolicy.Always;
+    // Supports the assignment's local HTTP profile while still marking the
+    // cookie secure whenever the request itself uses HTTPS.
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     options.IdleTimeout = TimeSpan.FromMinutes(10);
 });
 builder.Services.AddRateLimiter(options =>
@@ -53,15 +54,21 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.AccessDeniedPath = "/Account/Login";
         options.Cookie.Name = "Eduvo.Member";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
-            ? CookieSecurePolicy.SameAsRequest
-            : CookieSecurePolicy.Always;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.Cookie.SameSite = SameSiteMode.Lax;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
     });
 
-builder.Services.Configure<LoyaltyApiOptions>(builder.Configuration.GetSection(LoyaltyApiOptions.SectionName));
+builder.Services.AddOptions<LoyaltyApiOptions>()
+    .Bind(builder.Configuration.GetSection(LoyaltyApiOptions.SectionName))
+    .Validate(options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _),
+        "LoyaltyApi:BaseUrl must be a valid absolute URL.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.JwtUserName),
+        "LoyaltyApi:JwtUserName must be configured through User Secrets or environment variables.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.JwtPassword),
+        "LoyaltyApi:JwtPassword must be configured through User Secrets or environment variables.")
+    .ValidateOnStart();
 builder.Services.AddHttpClient("LoyaltyApi", client => client.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddSingleton<ILoyaltyTokenProvider, LoyaltyTokenProvider>();
 builder.Services.AddTransient<ILoyaltyApiClient, LoyaltyApiClient>();

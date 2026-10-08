@@ -1,9 +1,70 @@
-@model MemberSummary
+@model WalletPageViewModel
 @{ ViewData["Title"] = "Wallet"; }
 <section class="page-heading"><div><span class="eyebrow">Your wallet</span><h1>Balances and benefits</h1><p>Everything you have earned in one place.</p></div></section>
+
+<section class="dashboard-grid wallet-member-card" aria-label="Member card and QR code">
+    <div class="loyalty-card">
+        <div class="d-flex justify-content-between"><span class="card-brand">EDUVO</span><span class="tier-pill">@Model.Wallet.Tier</span></div>
+        <div class="member-name">@Model.Wallet.Name</div>
+        <div class="member-code">@Model.Wallet.MemberCode</div>
+        <div class="balance-row"><div><small>Wallet</small><strong>RM @Model.Wallet.WalletBalance.ToString("N2")</strong></div><div><small>Points</small><strong>@Model.Wallet.Points.ToString("N0")</strong></div><div><small>Stamps</small><strong>@Model.Wallet.Stamps</strong></div></div>
+    </div>
+    <div class="qr-card">
+        <img class="member-qr" src="@Url.Action("MemberQr", "Member")" alt="Member QR code" />
+        <div><h2>Member QR</h2><p>Show this screen at the counter to earn or redeem.</p><small>Encoded from your registered phone number</small></div>
+    </div>
+</section>
+
 <div class="stat-grid">
-    <article><small>Wallet balance</small><strong>RM @Model.WalletBalance.ToString("N2")</strong><span>For eligible counter payments</span></article>
-    <article><small>Available points</small><strong>@Model.Points.ToString("N0")</strong><span>Expires @(Model.PointsExpireAt?.ToString("dd MMM yyyy") ?? "—")</span></article>
-    <article><small>Current stamps</small><strong>@Model.Stamps</strong><span>Keep visiting to complete your card</span></article>
+    <article><small>Wallet balance</small><strong>RM @Model.Wallet.WalletBalance.ToString("N2")</strong><span>For eligible counter payments</span></article>
+    <article><small>Available points</small><strong>@Model.Wallet.Points.ToString("N0")</strong><span>Expires @(Model.Wallet.PointsExpireAt?.ToString("dd MMM yyyy") ?? "—")</span><a class="stat-link" asp-action="Rewards">Use points for rewards →</a></article>
+    <article><small>Current stamps</small><strong>@Model.Wallet.Stamps</strong><span>Keep visiting to complete your card</span></article>
 </div>
 <div class="info-panel"><h2>How your wallet works</h2><p>Wallet top-ups, points and stamps are recorded by staff at the counter. Your balances update here after the transaction is completed.</p><div class="d-flex flex-wrap gap-2"><a class="btn btn-primary" asp-action="History">View wallet activity</a><a class="btn btn-outline-dark" asp-action="History" asp-route-type="Top-up">Top-up history</a></div></div>
+
+<section class="content-section" aria-labelledby="claimed-items-heading">
+    <div class="section-title">
+        <div><span class="eyebrow">Ready to use</span><h2 id="claimed-items-heading">My claimed rewards</h2></div>
+        <span>@Model.ClaimedCount item@(Model.ClaimedCount == 1 ? "" : "s")</span>
+    </div>
+
+    @if (Model.ClaimedCount == 0)
+    {
+        <div class="empty-state panel">
+            <h3>No claimed rewards yet</h3>
+            <p>Rewards and vouchers you claim will appear here with a redemption QR code.</p>
+        </div>
+    }
+    else
+    {
+        <div class="claimed-reward-list">
+            @foreach (var reward in Model.ClaimedRewards)
+            {
+                var rewardId = reward.RewardId ?? reward.Id.ToString();
+                <article class="claimed-reward-card">
+                    <img class="reward-qr" src="@Url.Action("RewardQr", "Member", new { id = rewardId })" alt="@reward.Name redemption QR code" />
+                    <div class="claimed-reward-copy"><div class="d-flex gap-2 align-items-center"><span class="reward-category">Reward</span><span class="owned-pill">Claimed</span></div><h3>@reward.Name</h3><p>@reward.Description</p><small>@(reward.ExpireAt?.ToString("Expires dd MMM yyyy") ?? "Ready to redeem")</small></div>
+                    <a class="btn btn-outline-dark" asp-action="RewardDetails" asp-route-id="@rewardId">View details</a>
+                </article>
+            }
+            @foreach (var voucher in Model.ClaimedVouchers)
+            {
+                var rewardId = voucher.RewardId ?? voucher.Id.ToString();
+                <article class="claimed-reward-card">
+                    <img class="reward-qr" src="@Url.Action("RewardQr", "Member", new { id = rewardId })" alt="@voucher.Name redemption QR code" />
+                    <div class="claimed-reward-copy"><div class="d-flex gap-2 align-items-center"><span class="reward-category">Voucher</span><span class="owned-pill">Claimed</span></div><h3>@voucher.Name</h3><p>@voucher.Description</p><small>@(voucher.ExpireAt?.ToString("Expires dd MMM yyyy") ?? "Ready to redeem")</small></div>
+                    <a class="btn btn-outline-dark" asp-action="RewardDetails" asp-route-id="@rewardId" asp-route-voucher="true">View details</a>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="wallet-reward-cta" aria-labelledby="wallet-rewards-heading">
+    <div>
+        <span class="eyebrow">Use your points</span>
+        <h2 id="wallet-rewards-heading">Discover more rewards</h2>
+        <p>Browse available rewards and vouchers, then return here to use the items you have claimed.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="Rewards">Browse rewards</a>
+</section>

@@ -124,6 +124,14 @@ public sealed class RewardsViewModel
     public required IReadOnlyList<RewardCard> OwnedVouchers { get; init; }
 }
 
+public sealed class WalletPageViewModel
+{
+    public required MemberSummary Wallet { get; init; }
+    public required IReadOnlyList<RewardCard> ClaimedRewards { get; init; }
+    public required IReadOnlyList<RewardCard> ClaimedVouchers { get; init; }
+    public int ClaimedCount => ClaimedRewards.Count + ClaimedVouchers.Count;
+}
+
 public sealed class StampsViewModel
 {
     public required IReadOnlyList<StampCard> Active { get; init; }

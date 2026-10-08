@@ -1,21 +1,21 @@
 @model DashboardViewModel
 @{
     ViewData["Title"] = "Member home";
+    var tierName = string.IsNullOrWhiteSpace(Model.Member.Tier) ? "Member" : Model.Member.Tier.Trim();
+    var tierLabel = tierName.EndsWith("member", StringComparison.OrdinalIgnoreCase)
+        ? tierName
+        : $"{tierName} member";
 }
 
 <section class="page-heading"><div><span class="eyebrow">Member home</span><h1>Hello, @Model.Member.Name.Split(' ')[0]</h1><p>Here is your loyalty snapshot today.</p></div><a class="btn btn-outline-dark" asp-action="Profile">Manage profile</a></section>
 
-<section class="dashboard-grid">
-    <div class="loyalty-card">
-        <div class="d-flex justify-content-between"><span class="card-brand">EDUVO</span><span class="tier-pill">@Model.Member.Tier</span></div>
-        <div class="member-name">@Model.Member.Name</div>
-        <div class="member-code">@Model.Member.MemberCode</div>
-        <div class="balance-row"><div><small>Wallet</small><strong>RM @Model.Member.WalletBalance.ToString("N2")</strong></div><div><small>Points</small><strong>@Model.Member.Points.ToString("N0")</strong></div><div><small>Stamps</small><strong>@Model.Member.Stamps</strong></div></div>
+<section class="tier-hero" aria-label="Current membership tier">
+    <div>
+        <span class="eyebrow">Your current tier</span>
+        <h2>You're a @tierLabel</h2>
+        <p>Your wallet, points, stamps and claimed rewards are ready in one place.</p>
     </div>
-    <div class="qr-card">
-        <img class="member-qr" src="@Url.Action("MemberQr", "Member")" alt="Member QR code" />
-        <div><h2>Member QR</h2><p>Show this screen at the counter to earn or redeem.</p><small>Encoded from your registered phone number</small></div>
-    </div>
+    <a class="btn btn-light" asp-action="Wallet">Open my wallet</a>
 </section>
 
 @if (Model.Highlights.Count > 0)
@@ -50,4 +50,14 @@
             <div class="activity-item"><span class="activity-badge">@item.Type[0]</span><div><strong>@item.Description</strong><small>@item.OccurredAt.ToString("dd MMM yyyy, h:mm tt")</small></div><div class="activity-value">@(item.Amount is not null ? $"{item.Amount:+0.00;-0.00} RM" : item.Points is not null ? $"+{item.Points} pts" : "Added")</div></div>
         }
     </div>
+</section>
+
+<section class="feedback-cta" aria-labelledby="feedback-heading">
+    <div class="feedback-cta-icon" aria-hidden="true">✦</div>
+    <div>
+        <span class="eyebrow">Your opinion matters</span>
+        <h2 id="feedback-heading">How was your experience?</h2>
+        <p>Tell us what worked well or what we can improve. You can also review feedback you submitted previously.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="Feedback">Send feedback</a>
 </section>

@@ -38,7 +38,17 @@ public sealed class MemberController(
 
     public async Task<IActionResult> Wallet()
     {
-        return View(await loyaltyMembers.GetWalletAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted));
+        var phoneNumber = GetRequiredPhoneNumber();
+        var walletTask = loyaltyMembers.GetWalletAsync(phoneNumber, HttpContext.RequestAborted);
+        var rewardsTask = features.GetRewardsAsync(phoneNumber, HttpContext.RequestAborted);
+        await Task.WhenAll(walletTask, rewardsTask);
+
+        return View(new WalletPageViewModel
+        {
+            Wallet = walletTask.Result,
+            ClaimedRewards = rewardsTask.Result.OwnedRewards,
+            ClaimedVouchers = rewardsTask.Result.OwnedVouchers
+        });
     }
     public async Task<IActionResult> Rewards()
     {

@@ -239,7 +239,7 @@ public sealed class LoyaltyFeatureService(ILoyaltyApiClient apiClient) : ILoyalt
         Int(item, "Point") ?? 0,
         PlainText(item, "Description", "SubTitle") ?? string.Empty,
         owned,
-        Text(item, "RewardId"),
+        Text(item, "RewardId", "MemberRewardId", "VoucherId", "MemberVoucherId", "RedeemId", "Id"),
         Date(item, "ExpireDate"),
         Text(item, "DiscountAmount"));
 
