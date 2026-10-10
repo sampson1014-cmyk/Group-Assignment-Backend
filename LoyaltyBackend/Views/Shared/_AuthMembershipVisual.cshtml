@@ -1,0 +1,11 @@
+@model string
+@{ var joining = Model == "joining"; }
+<div class="auth-membership-scene" aria-hidden="true">
+    <div class="auth-card-orbit"></div>
+    <div class="auth-member-card">
+        <div class="auth-card-brand"><span>E</span><strong>Eduvo</strong><small>REWARDS</small></div>
+        <div class="auth-card-message"><small>@(joining ? "A membership for your everyday." : "Your everyday, all together.")</small><strong>@(joining ? "More from every visit." : "Your benefits. Your next chapter.")</strong></div>
+        <div class="auth-card-benefits"><span>Wallet</span><span>Points</span><span>Stamps</span><span aria-hidden="true">✦</span></div>
+    </div>
+    <div class="auth-card-note"><span class="auth-note-icon"><svg viewBox="0 0 24 24" fill="none"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z" fill="currentColor" /></svg></span><div><strong>@(joining ? "A little closer to your next treat" : "Ready for your next visit")</strong><small>@(joining ? "Start collecting on eligible purchases" : "Your membership, in one place")</small></div></div>
+</div>

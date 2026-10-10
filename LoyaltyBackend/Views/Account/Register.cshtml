@@ -3,11 +3,12 @@
     ViewData["Title"] = "Join Eduvo Rewards";
 }
 
-<section class="auth-shell">
+<section class="auth-shell auth-visual-layout">
     <div class="auth-copy">
         <span class="eyebrow">Join for free</span>
         <h1>Turn everyday visits into rewards.</h1>
         <p>Your member wallet, points, stamps and vouchers will be available from any browser.</p>
+        <partial name="_AuthMembershipVisual" model='@("joining")' />
     </div>
     <div class="form-card">
         <h2>Create your account</h2>

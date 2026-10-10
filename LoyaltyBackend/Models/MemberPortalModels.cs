@@ -96,7 +96,13 @@ public sealed record RewardCard(
     bool Owned = false,
     string? RewardId = null,
     DateTime? ExpireAt = null,
-    string? DiscountAmount = null);
+    string? DiscountAmount = null,
+    string? Status = null)
+{
+    public bool CanRedeem => !string.IsNullOrWhiteSpace(RewardId)
+        && (ExpireAt is null || ExpireAt > DateTime.Now)
+        && (string.IsNullOrWhiteSpace(Status) || Status.Equals("Active", StringComparison.OrdinalIgnoreCase));
+}
 
 public sealed record ActivityRecord(
     DateTime OccurredAt,
@@ -105,7 +111,8 @@ public sealed record ActivityRecord(
     decimal? Amount,
     int? Points,
     string? ReferenceId = null,
-    string? Status = null);
+    string? Status = null,
+    int? Stamps = null);
 
 public sealed record OutletCard(int Id, string Name, string Address, string Phone, double Latitude, double Longitude);
 

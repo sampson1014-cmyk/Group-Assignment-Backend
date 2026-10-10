@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using LoyaltyBackend.Models;
 
@@ -10,7 +11,7 @@ public interface ILoyaltyFeatureService
 {
     Task<RewardsViewModel> GetRewardsAsync(string phoneNumber, CancellationToken cancellationToken = default);
     Task<RewardCard?> GetRewardAsync(string rewardId, string phoneNumber, bool voucher, CancellationToken cancellationToken = default);
-    Task<NotificationCard?> GetNotificationAsync(string notificationId, CancellationToken cancellationToken = default);
+    Task<NotificationCard?> GetNotificationAsync(string notificationId, string phoneNumber, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ActivityRecord>> GetHistoryAsync(string phoneNumber, string type, CancellationToken cancellationToken = default);
     Task<ActivityRecord?> GetTopUpDetailsAsync(string topUpId, CancellationToken cancellationToken = default);
     Task<StampsViewModel> GetStampsAsync(string phoneNumber, CancellationToken cancellationToken = default);
@@ -60,11 +61,12 @@ public sealed class LoyaltyFeatureService(ILoyaltyApiClient apiClient) : ILoyalt
 
     public async Task<NotificationCard?> GetNotificationAsync(
         string notificationId,
+        string phoneNumber,
         CancellationToken cancellationToken = default)
     {
         var item = await GetObjectAsync(
             "api/MemberNotification/GetNotificationsDetails",
-            new { Notification_Id = notificationId },
+            new { Notification_Id = notificationId, PhoneNumber = phoneNumber },
             cancellationToken);
         return item is null ? null : MapNotification(item.Value);
     }
@@ -76,15 +78,31 @@ public sealed class LoyaltyFeatureService(ILoyaltyApiClient apiClient) : ILoyalt
     {
         var endpoint = type.ToLowerInvariant() switch
         {
+            "all" => "api/History/GetAllRecordByPhoneNumber",
             "top-up" => "api/History/GetTopUpRecordByPhoneNumber",
             "wallet" => "api/History/GetPaymentRecordByPhoneNumber",
             "points" => "api/History/GetAssignPointRecordByPhoneNumber",
             "stamp" => "api/History/GetAssignStampRecordByPhoneNumber",
-            "reward" => "api/History/GetRedeemRewardRecordByPhoneNumber",
-            "voucher" => "api/History/GetRedeemVoucherRecordByPhoneNumber",
+            "stamps used" => "api/History/GetStampRecordByPhoneNumber",
+            "spending" => "api/MemberAccount/GetSpendRecords",
+            "voucher activity" => "api/MemberAccount/GetMemberVoucherHistories",
+            "reward" => "api/MerchantTransactionHistories/GetAllRewardsRecordsFilterByMember",
+            "voucher" => "api/MerchantTransactionHistories/GetAllVoucherRecordsFilterByMember",
             _ => throw new ArgumentOutOfRangeException(nameof(type))
         };
-        var items = await GetArrayAsync(endpoint, new PhoneNumberRequest(phoneNumber), cancellationToken);
+        var items = await GetArrayAsync(endpoint, type.ToLowerInvariant() is "reward" or "voucher"
+            ? (object)new { Phone = phoneNumber } : new PhoneNumberRequest(phoneNumber), cancellationToken);
+        if (type.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var rewards = await GetArrayAsync("api/MerchantTransactionHistories/GetAllRewardsRecordsFilterByMember", new { Phone = phoneNumber }, cancellationToken);
+            var vouchers = await GetArrayAsync("api/MerchantTransactionHistories/GetAllVoucherRecordsFilterByMember", new { Phone = phoneNumber }, cancellationToken);
+            items = MergeRedemptionHistory(items, rewards.Concat(vouchers).ToArray());
+        }
+        if (type.ToLowerInvariant() is "all" or "wallet" or "points")
+        {
+            var spends = await GetArrayAsync("api/MemberAccount/GetSpendRecords", new PhoneNumberRequest(phoneNumber), cancellationToken);
+            items = ReconcileHistory(items, spends, type);
+        }
         return items.Select(item => MapActivity(item, type)).OrderByDescending(item => item.OccurredAt).ToArray();
     }
 
@@ -128,7 +146,7 @@ public sealed class LoyaltyFeatureService(ILoyaltyApiClient apiClient) : ILoyalt
     public async Task<IReadOnlyList<OutletCard>> GetOutletsAsync(CancellationToken cancellationToken = default)
     {
         var items = await GetArrayAsync("api/ManageOutlets/GetAllOutlets", null, cancellationToken);
-        return items.Select(item => new OutletCard(
+        return items.Where(item => string.IsNullOrWhiteSpace(Text(item, "Status")) || string.Equals(Text(item, "Status"), "Active", StringComparison.OrdinalIgnoreCase)).Select(item => new OutletCard(
                 Int(item, "Id") ?? 0,
                 Text(item, "Name") ?? "Outlet",
                 Text(item, "Address") ?? string.Empty,
@@ -230,6 +248,24 @@ public sealed class LoyaltyFeatureService(ILoyaltyApiClient apiClient) : ILoyalt
     {
         using var response = await apiClient.PostAsync(endpoint, payload, cancellationToken);
         response.EnsureSuccessStatusCode();
+        var content = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+        if (!string.IsNullOrWhiteSpace(content))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(content);
+                if (document.RootElement.ValueKind == JsonValueKind.String) content = document.RootElement.GetString() ?? "";
+                else if (document.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    if (Bool(document.RootElement, "success", "Success") == false)
+                        throw new InvalidOperationException("The Loyalty API did not confirm this change.");
+                    content = Text(document.RootElement, "message", "Message") ?? "";
+                }
+            }
+            catch (JsonException) { /* Some upstream actions return plain text. */ }
+            if (Regex.IsMatch(content, @"\b(failed|failure|invalid|incorrect|not found|expired|insufficient|error)\b", RegexOptions.IgnoreCase))
+                throw new InvalidOperationException("The Loyalty API did not confirm this change. Please check the details and try again.");
+        }
     }
 
     private static RewardCard MapReward(JsonElement item, bool owned, string fallbackCategory) => new(
@@ -241,11 +277,11 @@ public sealed class LoyaltyFeatureService(ILoyaltyApiClient apiClient) : ILoyalt
         owned,
         Text(item, "RewardId", "MemberRewardId", "VoucherId", "MemberVoucherId", "RedeemId", "Id"),
         Date(item, "ExpireDate"),
-        Text(item, "DiscountAmount"));
+        Text(item, "DiscountAmount"), Text(item, "Status"));
 
     private static NotificationCard MapNotification(JsonElement item) => new(
         Text(item, "NotificationId", "Notification_Id", "Id") ?? string.Empty,
-        Text(item, "Title") ?? "Notification",
+        Text(item, "Title", "NotificationHeader", "Subject") ?? "Notification",
         PlainText(item, "Content", "Description") ?? string.Empty,
         Text(item, "NotificationType", "Type") ?? "General",
         Date(item, "PushTime", "CreateDate") ?? DateTime.MinValue,
@@ -253,21 +289,89 @@ public sealed class LoyaltyFeatureService(ILoyaltyApiClient apiClient) : ILoyalt
 
     private static ActivityRecord MapActivity(JsonElement item, string fallbackType)
     {
-        var type = Text(item, "Type", "HistoryType") ?? fallbackType;
-        var amount = Decimal(item, "Amount", "TopUpAmount", "SpendAmount", "TotalAmount");
+        var type = Text(item, "Type", "TransactionType", "HistoryType") ?? fallbackType;
+        var isStamp = type.Contains("stamp", StringComparison.OrdinalIgnoreCase);
+        var isPoints = type.Contains("point", StringComparison.OrdinalIgnoreCase);
+        var redemption = Regex.Match(type, @"^Redeem\s+(?:Reward|Voucher)\s*\((.*)\)$", RegexOptions.IgnoreCase);
+        var isRedemption = Regex.IsMatch(type, "reward|voucher|redeem", RegexOptions.IgnoreCase);
+        var amount = isStamp || isPoints || isRedemption ? null : Decimal(item, "Amount", "TopUpAmount", "TopupAmount", "GrandAmount", "SpendAmount", "TotalAmount");
         if ((type.Contains("spend", StringComparison.OrdinalIgnoreCase) ||
-             type.Contains("payment", StringComparison.OrdinalIgnoreCase)) && amount is not null)
+             type.Contains("payment", StringComparison.OrdinalIgnoreCase) || type.Equals("wallet", StringComparison.OrdinalIgnoreCase)) && amount is not null)
         {
             amount = -Math.Abs(amount.Value);
         }
         return new ActivityRecord(
-            Date(item, "DateTime", "CreateDate", "TopupDate", "TransactionDate", "UseDate") ?? DateTime.MinValue,
-            fallbackType,
-            PlainText(item, "Description", "Name", "Title") ?? fallbackType,
+            Date(item, "DateTime", "RedeemDate", "SpendTime", "DateAssign", "ClaimDate", "CreateDate", "TopupDate", "TransactionDate", "UseDate") ?? DateTime.MinValue,
+            type,
+            redemption.Success ? redemption.Groups[1].Value : PlainText(item, "Description", "Name", "Title") ?? type,
             amount,
-            Int(item, "Point", "RewardPoint"),
+            isStamp ? null : Int(item, "RewardPoint", "Point"),
             Text(item, "TopupId", "TopUpId", "HistoryId", "ReferenceNumber", "Id"),
-            Text(item, "Status"));
+            Text(item, "Status", "IsPaid"),
+            isStamp ? StampValue(item, type) : null);
+    }
+
+    private static int? StampValue(JsonElement item, string type)
+    {
+        var count = Int(item, "TotalUseStamp", "TotalAssignStamp", "StampCount", "Stamp", "Point");
+        return count.HasValue && (type.Contains("use", StringComparison.OrdinalIgnoreCase) || type.Contains("redeem", StringComparison.OrdinalIgnoreCase))
+            ? -Math.Abs(count.Value) : count;
+    }
+
+    internal static IReadOnlyList<JsonElement> MergeRedemptionHistory(IReadOnlyList<JsonElement> records, IReadOnlyList<JsonElement> additions)
+    {
+        static string? Key(JsonElement item)
+        {
+            var type = Text(item, "Type", "TransactionType") ?? "";
+            if (!Regex.IsMatch(type, "reward|voucher|redeem", RegexOptions.IgnoreCase)) return null;
+            var date = Date(item, "RedeemDate", "DateTime", "CreateDate");
+            if (date is null) return null;
+            var kind = type.Contains("voucher", StringComparison.OrdinalIgnoreCase) ? "voucher" : "reward";
+            var match = Regex.Match(type, @"^Redeem\s+(?:Reward|Voucher)\s*\((.*)\)$", RegexOptions.IgnoreCase);
+            var name = (match.Success ? match.Groups[1].Value : Text(item, "Description", "Name", "Title") ?? "").Trim();
+            var phone = Regex.Replace(Text(item, "Phone", "PhoneNumber") ?? "", @"\D", "");
+            var merchant = (Text(item, "Merchant_Id", "MerchantId") ?? "").Split(',')[0].Trim();
+            return $"{kind}:{date.Value.Ticks / TimeSpan.TicksPerSecond}:{phone}:{merchant}:{name}";
+        }
+        var keys = records.Select(Key).Where(key => key is not null).GroupBy(key => key!).ToDictionary(group => group.Key, group => group.Count());
+        var merged = records.ToList();
+        foreach (var item in additions)
+        {
+            var key = Key(item);
+            if (key is not null && keys.TryGetValue(key, out var count) && count > 0) { keys[key] = count - 1; continue; }
+            merged.Add(item);
+        }
+        return merged;
+    }
+
+    internal static IReadOnlyList<JsonElement> ReconcileHistory(IReadOnlyList<JsonElement> records, IReadOnlyList<JsonElement> spends, string filter)
+    {
+        var paid = spends.Where(item => Regex.IsMatch(Text(item, "Status", "IsPaid") ?? "", "^(paid|success)$", RegexOptions.IgnoreCase)).ToArray();
+        if (filter.Equals("points", StringComparison.OrdinalIgnoreCase))
+        {
+            var references = records.Select(item => Text(item, "ReferenceNumber")).Where(value => !string.IsNullOrWhiteSpace(value)).ToHashSet();
+            return records.Concat(paid.Where(item => Int(item, "RewardPoint") > 0 && !references.Contains(Text(item, "ReferenceNumber"))).Select(item =>
+            {
+                var node = JsonNode.Parse(item.GetRawText())!.AsObject();
+                node["Type"] = "Purchase Points";
+                node["Point"] = Int(item, "RewardPoint");
+                node["DateTime"] = Text(item, "SpendTime");
+                node["Description"] = "Points earned from a purchase";
+                return JsonSerializer.SerializeToElement(node);
+            })).ToArray();
+        }
+        return records.Select(item =>
+        {
+            if (!Regex.IsMatch(Text(item, "Type", "TransactionType") ?? "", "payment|spend", RegexOptions.IgnoreCase)) return item;
+            var reference = Text(item, "ReferenceNumber");
+            if (string.IsNullOrWhiteSpace(reference)) return item;
+            var spend = spends.FirstOrDefault(value => Text(value, "ReferenceNumber") == reference);
+            if (spend.ValueKind != JsonValueKind.Object) return item;
+            var node = JsonNode.Parse(item.GetRawText())!.AsObject();
+            node["Status"] = Text(spend, "Status");
+            node["RewardPoint"] = paid.Contains(spend) ? Int(spend, "RewardPoint") ?? 0 : 0;
+            return JsonSerializer.SerializeToElement(node);
+        }).ToArray();
     }
 
     private static StampCard MapStamp(JsonElement item, bool used) => new(
@@ -284,7 +388,8 @@ public sealed class LoyaltyFeatureService(ILoyaltyApiClient apiClient) : ILoyalt
         foreach (var name in names)
         {
             if (!element.TryGetProperty(name, out var value) || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) continue;
-            return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+            var text = value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+            if (!string.IsNullOrWhiteSpace(text)) return text;
         }
         return null;
     }
@@ -317,13 +422,14 @@ public sealed class LoyaltyFeatureService(ILoyaltyApiClient apiClient) : ILoyalt
 
     private static DateTime? Date(JsonElement element, params string[] names)
     {
-        var text = Text(element, names);
-        return DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var value) ? value : null;
+        foreach (var name in names)
+            if (DateTime.TryParse(Text(element, name), CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var value)) return value;
+        return null;
     }
 
     private static bool? Bool(JsonElement element, params string[] names)
     {
         var text = Text(element, names);
-        return bool.TryParse(text, out var value) ? value : null;
+        return text is "1" ? true : text is "0" ? false : bool.TryParse(text, out var value) ? value : null;
     }
 }

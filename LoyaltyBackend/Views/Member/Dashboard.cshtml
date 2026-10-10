@@ -7,33 +7,26 @@
         : $"{tierName} member";
 }
 
-<section class="page-heading"><div><span class="eyebrow">Member home</span><h1>Hello, @Model.Member.Name.Split(' ')[0]</h1><p>Here is your loyalty snapshot today.</p></div><a class="btn btn-outline-dark" asp-action="Profile">Manage profile</a></section>
-
-<section class="tier-hero" aria-label="Current membership tier">
-    <div>
-        <span class="eyebrow">Your current tier</span>
-        <h2>You're a @tierLabel</h2>
-        <p>Your wallet, points, stamps and claimed rewards are ready in one place.</p>
+<div class="member-refresh">
+<section class="member-welcome"><div><span class="eyebrow">Your everyday, rewarded</span><h1>Hello, @Model.Member.Name.Split(' ')[0]<span class="welcome-dot">.</span></h1><p>A little closer to something good.</p></div><a class="quiet-link" asp-action="Profile">Manage profile <span aria-hidden="true">↗</span></a></section>
+<section class="member-overview" data-member-balances="@Url.Action("BalanceSnapshot", "Member")" aria-label="Your membership and balances">
+    <div class="member-wallet-panel">
+        <div class="wallet-panel-top"><span class="eyebrow">Your wallet</span><span class="membership-tier">@tierLabel</span></div>
+        <strong class="wallet-panel-amount" data-balance="balance">RM @Model.Member.WalletBalance.ToString("N2")</strong>
+        <div class="wallet-panel-bottom"><span>Ready for your next visit</span><a asp-action="Wallet">Open wallet <span aria-hidden="true">→</span></a></div>
     </div>
-    <a class="btn btn-light" asp-action="Wallet">Open my wallet</a>
+    <div class="member-code-panel"><div><span class="eyebrow">At the counter</span><h2>One scan.<br />You're all set.</h2><p>Show your member QR to staff to earn, pay or redeem.</p><a class="quiet-link" asp-action="Wallet">Open member card <span aria-hidden="true">→</span></a></div><img class="member-qr" src="@Url.Action("MemberQr", "Member")" alt="Your member QR code" width="160" height="160" /></div>
+    <div class="member-metrics"><a asp-action="Rewards"><span class="metric-label">Available points <span aria-hidden="true">↗</span></span><strong data-balance="points">@Model.Member.Points.ToString("N0")</strong><small>Find a reward you'll love</small></a><a asp-action="Stamps"><span class="metric-label">Current stamps <span aria-hidden="true">↗</span></span><strong data-balance="stamps">@Model.Member.Stamps</strong><small>Every eligible visit adds up</small></a><div class="membership-note"><span class="metric-label">Made for your everyday</span><p>Collect a little.<br />Enjoy a little more.</p><a class="quiet-link" asp-action="Rewards">Explore rewards <span aria-hidden="true">→</span></a></div></div>
 </section>
-
-@if (Model.Highlights.Count > 0)
-{
-    <section class="highlight-strip" aria-label="Member promotions">
-        @foreach (var item in Model.Highlights)
-        {
-            <article><span class="eyebrow">@item.Subtitle</span><h2>@item.Title</h2><p>@item.Description</p>@if (!string.IsNullOrWhiteSpace(item.Link)) { <a class="btn btn-light" href="@item.Link" rel="noopener noreferrer">@(item.ButtonText ?? "Learn more")</a> }</article>
-        }
-    </section>
-}
+<small class="member-sync-note" data-balance-status role="status">Balances refresh automatically while this page is open.</small>
 
 <section class="content-section">
     <div class="section-title"><div><span class="eyebrow">Discover</span><h2>Featured rewards</h2></div><a asp-action="Rewards">View all</a></div>
     <div class="reward-grid">
+        @if (Model.FeaturedRewards.Count == 0) { <div class="empty-state">New rewards will appear here when they are available.</div> }
         @foreach (var reward in Model.FeaturedRewards)
         {
-            <article class="reward-card"><span class="reward-category">@reward.Category</span><h3>@reward.Name</h3><p>@reward.Description</p><strong>@reward.Points points</strong></article>
+            <article class="reward-card"><partial name="_RewardVisual" model="reward" /><span class="reward-category">@reward.Category</span><h3>@reward.Name</h3><p>@reward.Description</p><div class="reward-footer"><strong>@(reward.Points > 0 ? $"{reward.Points:N0} points" : "Member benefit")</strong><a class="btn btn-outline-dark btn-sm" asp-action="RewardDetails" asp-route-id="@(reward.RewardId ?? reward.Id.ToString())">View reward</a></div>@if (reward.Points > 0) { <small class="points-status @(Model.Member.Points >= reward.Points ? "covered" : "")">@(Model.Member.Points >= reward.Points ? "You have enough points" : $"Collect {reward.Points - Model.Member.Points:N0} more points")</small> }</article>
         }
     </div>
 </section>
@@ -47,10 +40,22 @@
         }
         @foreach (var item in Model.RecentActivity)
         {
-            <div class="activity-item"><span class="activity-badge">@item.Type[0]</span><div><strong>@item.Description</strong><small>@item.OccurredAt.ToString("dd MMM yyyy, h:mm tt")</small></div><div class="activity-value">@(item.Amount is not null ? $"{item.Amount:+0.00;-0.00} RM" : item.Points is not null ? $"+{item.Points} pts" : "Added")</div></div>
+            <div class="activity-item"><span class="activity-badge" aria-hidden="true">@ActivityPresentation.Icon(item)</span><div><strong>@ActivityPresentation.Title(item)</strong><details class="activity-description"><summary>Transaction details</summary><p>@item.Description</p></details><small>@(item.OccurredAt == DateTime.MinValue ? "Date unavailable" : item.OccurredAt.ToString("dd MMM yyyy, h:mm tt")) · @(item.Status ?? "Recorded")</small></div><div class="activity-value">@ActivityPresentation.Value(item)</div></div>
         }
     </div>
 </section>
+
+@if (Model.Highlights.Count > 0)
+{
+    <section class="content-section"><div class="section-title"><div><span class="eyebrow">Explore</span><h2>Member offers</h2></div></div>
+    <section class="highlight-strip" aria-label="Member promotions">
+        @foreach (var item in Model.Highlights)
+        {
+            <article><span class="eyebrow">@item.Subtitle</span><h2>@item.Title</h2><p tabindex="0">@item.Description</p>@if (!string.IsNullOrWhiteSpace(item.Link)) { <a class="btn btn-light" href="@item.Link" rel="noopener noreferrer">@(item.ButtonText ?? "Learn more")</a> }</article>
+        }
+    </section>
+</section>
+}
 
 <section class="feedback-cta" aria-labelledby="feedback-heading">
     <div class="feedback-cta-icon" aria-hidden="true">✦</div>
@@ -61,3 +66,4 @@
     </div>
     <a class="btn btn-primary" asp-action="Feedback">Send feedback</a>
 </section>
+</div>

@@ -28,17 +28,21 @@ public sealed class LoyaltyMemberService(ILoyaltyApiClient apiClient) : ILoyalty
 
     public async Task<MemberSummary> GetSummaryAsync(string phoneNumber, CancellationToken cancellationToken = default)
     {
-        var member = await GetDetailsAsync(phoneNumber, cancellationToken);
+        var memberTask = GetDetailsAsync(phoneNumber, cancellationToken);
+        var walletTask = GetWalletAsync(phoneNumber, cancellationToken);
+        await Task.WhenAll(memberTask, walletTask);
+        var member = memberTask.Result;
+        var wallet = walletTask.Result;
 
         return new MemberSummary(
             member.Name ?? "Member",
             member.UserId ?? phoneNumber,
-            member.Tier ?? "Member",
-            member.Balance,
-            member.Point ?? 0,
-            member.TotalStamp,
+            wallet.Tier,
+            wallet.WalletBalance,
+            wallet.Points,
+            wallet.Stamps,
             member.ReferralCode ?? string.Empty,
-            member.ExpireDate,
+            wallet.PointsExpireAt,
             ResolvePhotoSource(member));
     }
 

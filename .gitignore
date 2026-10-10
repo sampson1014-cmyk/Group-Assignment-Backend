@@ -4,3 +4,5 @@
 *.user
 *.suo
 LoyaltyBackend/appsettings.Local.json
+Verification/
+web-verification-*.json

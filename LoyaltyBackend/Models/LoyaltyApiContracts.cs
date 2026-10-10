@@ -21,8 +21,8 @@ public sealed record RegisterMemberRequest(
     [property: JsonPropertyName("Password")] string Password,
     [property: JsonPropertyName("Birthday")] string? Birthday,
     [property: JsonPropertyName("EmailSubcribe")] string? EmailSubscribe,
-    [property: JsonPropertyName("Image")] string? Image = null,
-    [property: JsonPropertyName("ImageByte")] string? ImageByte = null);
+    [property: JsonPropertyName("Image")] string? Image = "",
+    [property: JsonPropertyName("ImageByte")] string? ImageByte = "");
 
 public sealed record PhoneLoginRequest(
     [property: JsonPropertyName("Phone")] string Phone,

@@ -1,29 +1,29 @@
-﻿@{
-    ViewData["Title"] = "Your rewards, all in one place";
-}
-
-<section class="hero">
-    <div class="hero-copy">
-        <span class="eyebrow">Every visit counts</span>
-        <h1>Earn more from the places you already love.</h1>
-        <p>Keep your wallet, points, stamps and rewards together. Show one member QR at the counter and watch your benefits grow.</p>
-        <div class="d-flex flex-wrap gap-3">
-            <a class="btn btn-primary btn-lg" asp-controller="Account" asp-action="Register">Create an account</a>
-            <a class="btn btn-outline-dark btn-lg" asp-controller="Account" asp-action="Login">Member login</a>
-        </div>
+@{ ViewData["Title"] = "Your rewards, all in one place"; }
+<div class="landing-refresh">
+<section class="landing-hero" aria-labelledby="landing-title">
+    <div class="landing-copy">
+        <span class="intro-label"><span aria-hidden="true"></span> A little more from every visit</span>
+        <h1 id="landing-title">Good visits.<br />Even better<br /><em>rewards.</em></h1>
+        <p>Your morning drink. Your favourite lunch. Make the everyday more rewarding with one simple membership.</p>
+        <div class="landing-actions"><a class="btn btn-primary" asp-controller="Account" asp-action="Register">Join Eduvo Rewards <span aria-hidden="true">↗</span></a><a class="quiet-link" asp-controller="Account" asp-action="Login">Already a member? Log in <span aria-hidden="true">→</span></a></div>
+        <div class="hero-caption">Wallet. Points. Stamps. All together.</div>
     </div>
-    <div class="hero-card">
-        <div class="member-card-preview">
-            <div class="d-flex justify-content-between"><strong>EDUVO</strong><span>MEMBER</span></div>
-            <div class="preview-balance"><small>Your benefits</small><strong>One member card</strong></div>
-            <div class="d-flex justify-content-between"><span>Wallet &amp; points</span><span>Rewards &amp; stamps</span></div>
+    <div class="membership-scene" aria-label="One membership for wallet, points and stamps">
+        <div class="scene-orbit" aria-hidden="true"></div>
+        <div class="scene-label">YOUR EVERYDAY, REWARDED</div>
+        <div class="scene-card">
+            <div class="scene-card-top"><span class="scene-brand">E <span>Eduvo</span></span><span class="scene-member">MEMBER</span></div>
+            <div class="scene-card-copy"><small>Small moments. More possibilities.</small><strong>One membership.<br />Made for you.</strong></div>
+            <div class="scene-card-bottom"><span>Wallet &amp; benefits</span><span aria-hidden="true">✦</span></div>
         </div>
-        <div class="mini-stat"><strong>One QR</strong><span>Earn, pay and redeem at the counter.</span></div>
+        <div class="scene-benefit scene-benefit-top"><span class="scene-symbol" aria-hidden="true">✦</span><div><strong>A little closer to your next treat</strong><small>Collect points on eligible purchases</small></div></div>
+        <div class="scene-benefit scene-benefit-bottom"><span class="scene-symbol" aria-hidden="true">✓</span><div><strong>Your next visit, simplified</strong><small>One member QR at the counter</small></div></div>
     </div>
 </section>
-
-<section class="feature-grid">
-    <article><span class="feature-icon">✦</span><h2>Earn automatically</h2><p>Track points and stamps after every eligible counter purchase.</p></article>
-    <article><span class="feature-icon">◈</span><h2>Rewards ready</h2><p>Browse member rewards and keep your vouchers close at hand.</p></article>
-    <article><span class="feature-icon">◎</span><h2>See every activity</h2><p>Review top-ups, spending, points, stamps and redemptions.</p></article>
+<section class="landing-benefits" aria-label="Membership benefits">
+    <article><span class="benefit-number">01 / COLLECT</span><h2>Every visit adds up.</h2><p>Earn points and stamps on eligible purchases. Keep track without keeping receipts.</p></article>
+    <article><span class="benefit-number">02 / ENJOY</span><h2>Find your next treat.</h2><p>Explore rewards and vouchers, then show your code to redeem at the counter.</p></article>
+    <article><span class="benefit-number">03 / STAY IN CONTROL</span><h2>Everything in one place.</h2><p>Your wallet, balances and activity stay together, ready whenever you need them.</p></article>
 </section>
+<section class="landing-closing"><div><span class="eyebrow">YOUR NEXT VISIT STARTS HERE</span><h2>Make yourself a member.</h2></div><a class="btn btn-outline-dark" asp-controller="Account" asp-action="Register">Create your account <span aria-hidden="true">→</span></a></section>
+</div>

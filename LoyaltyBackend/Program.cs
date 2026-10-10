@@ -6,21 +6,27 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Keep local API credentials available for every launch profile, including when
-// the compiled application is started directly. The values remain outside source
-// control in .NET User Secrets.
+// Load local path overrides before resolving the development gateway file.
 builder.Configuration.AddUserSecrets(typeof(Program).Assembly, optional: true, reloadOnChange: true);
-
 if (builder.Environment.IsDevelopment())
 {
-    // Local fallback for IDEs that do not resolve the User Secrets provider.
-    // This file is excluded by .gitignore and must never be committed.
     builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 }
 
-// The provider's JWT endpoint requires credentials in its query string.
-// Prevent the default HttpClient logger from writing that URL to application logs.
-builder.Logging.AddFilter("System.Net.Http.HttpClient.LoyaltyApi", LogLevel.Warning);
+// Reuse only the local gateway's session key in development. It stays server-side
+// and is never copied into the repository. Explicit configuration takes priority.
+if (builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(builder.Configuration["APP_JWT_SECRET"]))
+{
+    var gatewayEnv = builder.Configuration["SharedGateway:EnvironmentFile"]
+        ?? Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "../../../EduvoBackend/.env"));
+    if (File.Exists(gatewayEnv))
+    {
+        var line = File.ReadLines(gatewayEnv).FirstOrDefault(value => value.TrimStart().StartsWith("APP_JWT_SECRET=", StringComparison.Ordinal));
+        if (line is not null) builder.Configuration["APP_JWT_SECRET"] = line[(line.IndexOf('=') + 1)..].Trim().Trim('"', '\'');
+    }
+}
+
+// The website never requests or logs the provider JWT; the shared gateway owns it.
 
 // Add services to the container.
 builder.Services.AddControllersWithViews(options => options.Filters.Add<ApiExceptionFilter>());
@@ -60,17 +66,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.SlidingExpiration = true;
     });
 
-builder.Services.AddOptions<LoyaltyApiOptions>()
-    .Bind(builder.Configuration.GetSection(LoyaltyApiOptions.SectionName))
-    .Validate(options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _),
-        "LoyaltyApi:BaseUrl must be a valid absolute URL.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.JwtUserName),
-        "LoyaltyApi:JwtUserName must be configured through User Secrets or environment variables.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.JwtPassword),
-        "LoyaltyApi:JwtPassword must be configured through User Secrets or environment variables.")
-    .ValidateOnStart();
-builder.Services.AddHttpClient("LoyaltyApi", client => client.Timeout = TimeSpan.FromSeconds(20));
-builder.Services.AddSingleton<ILoyaltyTokenProvider, LoyaltyTokenProvider>();
+builder.Services.AddHttpClient("SharedGateway", client => client.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddTransient<SharedGatewayQrService>();
 builder.Services.AddTransient<ILoyaltyApiClient, LoyaltyApiClient>();
 builder.Services.AddTransient<ILoyaltyMemberService, LoyaltyMemberService>();
 builder.Services.AddTransient<ILoyaltyFeatureService, LoyaltyFeatureService>();

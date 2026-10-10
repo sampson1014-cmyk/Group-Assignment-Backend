@@ -1,0 +1,7 @@
+@model MemberSummary
+<section class="stat-grid" data-member-balances="@Url.Action("BalanceSnapshot", "Member")" aria-label="Current loyalty balances">
+    <article><span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 9h18M16 13h5M17 15h1"/></svg></span><small>Wallet balance</small><strong data-balance="balance">RM @Model.WalletBalance.ToString("N2")</strong></article>
+    <article><span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m12 6 1.8 3.7 4.2.6-3 2.9.7 4.1-3.7-1.9-3.7 1.9.7-4.1-3-2.9 4.2-.6Z"/></svg></span><small>Available points</small><strong data-balance="points">@Model.Points.ToString("N0")</strong></article>
+    <article><span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="m8 12 3 3 5-6M8 6h8"/></svg></span><small>Current stamps</small><strong data-balance="stamps">@Model.Stamps</strong></article>
+</section>
+<small data-balance-status role="status">Balances refresh automatically while this page is open.</small>

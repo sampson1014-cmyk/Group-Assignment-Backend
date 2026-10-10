@@ -1,6 +1,7 @@
 @model IReadOnlyList<OutletCard>
 @{ ViewData["Title"] = "Stores"; }
 <section class="page-heading"><div><span class="eyebrow">Find us</span><h1>Nearby Eduvo stores</h1><p>Choose a store to earn points, collect stamps or redeem a reward.</p></div><button class="btn btn-outline-dark" id="locationButton" type="button">Use my location</button></section>
+<p id="locationStatus" role="status" aria-live="polite">Use your location to calculate distances. Stores without valid map coordinates cannot show a distance.</p>
 <div class="outlet-layout">
     <div class="outlet-list">
         @foreach (var outlet in Model)

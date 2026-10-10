@@ -26,13 +26,15 @@ $paths = @(
     '/Member/Dashboard', '/Member/Wallet', '/Member/Rewards', '/Member/Stamps',
     '/Member/History', '/Member/Notifications', '/Member/Referrals', '/Member/Outlets',
     '/Member/Profile', '/Member/EditProfile', '/Member/Feedback', '/Member/VerifyEmail',
-    '/Member/MemberQr', '/health'
+    '/Member/MemberQr', '/Member/BalanceSnapshot', '/health'
 )
 
 $paths += @(
     '/Member/History?type=Wallet', '/Member/History?type=Top-up',
     '/Member/History?type=Points', '/Member/History?type=Stamp',
-    '/Member/History?type=Reward', '/Member/History?type=Voucher'
+    '/Member/History?type=Reward', '/Member/History?type=Voucher',
+    '/Member/History?type=Stamps%20used', '/Member/History?type=Spending',
+    '/Member/History?type=Voucher%20activity'
 )
 
 foreach ($path in $paths)

@@ -12,9 +12,11 @@ using System.Text.RegularExpressions;
 namespace LoyaltyBackend.Controllers;
 
 [Authorize(Roles = "Member")]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class MemberController(
     ILoyaltyMemberService loyaltyMembers,
     ILoyaltyFeatureService features,
+    SharedGatewayQrService qrService,
     IWebHostEnvironment environment) : Controller
 {
     private const string EmailVerificationOtpKey = "Member.EmailVerificationOtp";
@@ -39,7 +41,7 @@ public sealed class MemberController(
     public async Task<IActionResult> Wallet()
     {
         var phoneNumber = GetRequiredPhoneNumber();
-        var walletTask = loyaltyMembers.GetWalletAsync(phoneNumber, HttpContext.RequestAborted);
+        var walletTask = loyaltyMembers.GetSummaryAsync(phoneNumber, HttpContext.RequestAborted);
         var rewardsTask = features.GetRewardsAsync(phoneNumber, HttpContext.RequestAborted);
         await Task.WhenAll(walletTask, rewardsTask);
 
@@ -63,11 +65,24 @@ public sealed class MemberController(
             id, GetRequiredPhoneNumber(), voucher, HttpContext.RequestAborted);
         if (reward is null) return NotFound();
         ViewData["Voucher"] = voucher;
+        var wallet = await loyaltyMembers.GetWalletAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
+        ViewData["CanRedeem"] = reward.CanRedeem && reward.Points <= wallet.Points;
         return View(reward);
     }
 
-    public async Task<IActionResult> Stamps() =>
-        View(await features.GetStampsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted));
+    public async Task<IActionResult> Stamps(int activeCount = 8, int usedCount = 8)
+    {
+        var stamps = await features.GetStampsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
+        activeCount = Math.Clamp(activeCount, 8, 10000);
+        usedCount = Math.Clamp(usedCount, 8, 10000);
+        ViewData["ActiveTotal"] = stamps.Active.Count;
+        ViewData["UsedTotal"] = stamps.Used.Count;
+        return View(new StampsViewModel
+        {
+            Active = stamps.Active.OrderByDescending(item => item.Date).ThenBy(item => item.Id).Take(activeCount).ToArray(),
+            Used = stamps.Used.OrderByDescending(item => item.Date).ThenBy(item => item.Id).Take(usedCount).ToArray()
+        });
+    }
 
     public async Task<IActionResult> Notifications() =>
         View(await features.GetNotificationsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted));
@@ -77,7 +92,7 @@ public sealed class MemberController(
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
         var memberNotifications = await features.GetNotificationsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
         if (!memberNotifications.Any(item => string.Equals(item.Id, id, StringComparison.Ordinal))) return NotFound();
-        var notification = await features.GetNotificationAsync(id, HttpContext.RequestAborted);
+        var notification = await features.GetNotificationAsync(id, GetRequiredPhoneNumber(), HttpContext.RequestAborted);
         if (notification is null) return NotFound();
         return View(notification);
     }
@@ -87,7 +102,10 @@ public sealed class MemberController(
     {
         if (!string.IsNullOrWhiteSpace(id))
         {
+            var notifications = await features.GetNotificationsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
+            if (!notifications.Any(item => item.Id == id)) return NotFound();
             await features.MarkNotificationReadAsync(GetRequiredPhoneNumber(), id, HttpContext.RequestAborted);
+            TempData["StatusMessage"] = "Notification marked as read.";
         }
         return RedirectToAction(nameof(Notifications));
     }
@@ -96,6 +114,7 @@ public sealed class MemberController(
     public async Task<IActionResult> ReadAllNotifications()
     {
         await features.MarkAllNotificationsReadAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
+        TempData["StatusMessage"] = "All notifications marked as read.";
         return RedirectToAction(nameof(Notifications));
     }
 
@@ -108,17 +127,19 @@ public sealed class MemberController(
             Members = await features.GetReferralsAsync(member.ReferralCode, HttpContext.RequestAborted)
         });
     }
-    public async Task<IActionResult> History(string? type = null)
+    public async Task<IActionResult> History(string? type = null, int count = 8)
     {
-        var validTypes = new[] { "Wallet", "Top-up", "Points", "Stamp", "Reward", "Voucher" };
+        var validTypes = new[] { "Wallet", "Top-up", "Points", "Stamp", "Stamps used", "Reward", "Voucher", "Spending", "Voucher activity" };
         if (!string.IsNullOrWhiteSpace(type) && !validTypes.Contains(type, StringComparer.OrdinalIgnoreCase))
         {
             return BadRequest();
         }
         ViewData["Type"] = type;
-        return View(string.IsNullOrWhiteSpace(type)
+        var records = string.IsNullOrWhiteSpace(type)
             ? await GetActivityAsync()
-            : await features.GetHistoryAsync(GetRequiredPhoneNumber(), type, HttpContext.RequestAborted));
+            : await features.GetHistoryAsync(GetRequiredPhoneNumber(), type, HttpContext.RequestAborted);
+        ViewData["Total"] = records.Count;
+        return View(records.Take(Math.Clamp(count, 8, 10000)).ToArray());
     }
 
     public async Task<IActionResult> TopUpDetails(string id)
@@ -133,24 +154,36 @@ public sealed class MemberController(
     public async Task<IActionResult> Outlets() => View(await features.GetOutletsAsync(HttpContext.RequestAborted));
     public async Task<IActionResult> Profile() => View(await GetMemberSummaryAsync());
 
-    public IActionResult MemberQr()
+    public async Task<IActionResult> BalanceSnapshot()
     {
-        var payload = GetRequiredPhoneNumber();
+        var member = await GetMemberSummaryAsync();
+        return Json(new { balance = member.WalletBalance, points = member.Points, stamps = member.Stamps, tier = member.Tier });
+    }
+
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> MemberQr()
+    {
+        var payload = await qrService.CreateAsync(GetRequiredPhoneNumber(), cancellationToken: HttpContext.RequestAborted);
         using var generator = new QRCodeGenerator();
         using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
         var qr = new SvgQRCode(data);
         return Content(qr.GetGraphic(6), "image/svg+xml");
     }
 
-    public async Task<IActionResult> RewardQr(string id)
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> RewardQr(string id, bool voucher = false)
     {
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
         var memberItems = await features.GetRewardsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
-        var ownsItem = memberItems.OwnedRewards.Concat(memberItems.OwnedVouchers)
-            .Any(item => string.Equals(item.RewardId, id, StringComparison.Ordinal));
-        if (!ownsItem) return NotFound();
+        var ownedItem = memberItems.OwnedRewards.Concat(memberItems.OwnedVouchers)
+            .FirstOrDefault(item => string.Equals(item.RewardId, id, StringComparison.Ordinal));
+        var isVoucher = voucher || memberItems.OwnedVouchers.Any(item => item.RewardId == id);
+        var item = ownedItem ?? await features.GetRewardAsync(id, GetRequiredPhoneNumber(), isVoucher, HttpContext.RequestAborted);
+        if (item is null) return NotFound();
+        if (!item.CanRedeem) return BadRequest("This item is expired or unavailable.");
+        var payload = await qrService.CreateAsync(GetRequiredPhoneNumber(), id, isVoucher, HttpContext.RequestAborted);
         using var generator = new QRCodeGenerator();
-        using var data = generator.CreateQrCode(id, QRCodeGenerator.ECCLevel.Q);
+        using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
         var qr = new SvgQRCode(data);
         return Content(qr.GetGraphic(6), "image/svg+xml");
     }
@@ -180,6 +213,11 @@ public sealed class MemberController(
             await using var photoStream = new MemoryStream();
             await model.Photo.CopyToAsync(photoStream, HttpContext.RequestAborted);
             model.ImageByte = Convert.ToBase64String(photoStream.ToArray());
+        }
+        if (model.Photo is null)
+        {
+            var current = await loyaltyMembers.GetDetailsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
+            model.ImageByte = current.ImageByte ?? string.Empty;
         }
         await features.UpdateProfileAsync(GetRequiredPhoneNumber(), model, HttpContext.RequestAborted);
         TempData["StatusMessage"] = "Your profile was updated.";
@@ -229,7 +267,9 @@ public sealed class MemberController(
             TempData["ErrorMessage"] = "The email verification service returned an unsupported response.";
             return RedirectToAction(nameof(Profile));
         }
-        HttpContext.Session.SetString(EmailVerificationOtpKey, otp);
+        VerificationChallenge.Store(HttpContext.Session, EmailVerificationOtpKey, otp);
+        // Requesting a code does not require the code-entry field yet.
+        ModelState.Clear();
         ViewData["VerificationRequested"] = true;
         if (environment.IsDevelopment()) ViewData["OtpHint"] = otp;
         return View("VerifyEmail", model);
@@ -240,7 +280,7 @@ public sealed class MemberController(
     {
         model.PhoneNumber = GetRequiredPhoneNumber();
         var expected = HttpContext.Session.GetString(EmailVerificationOtpKey);
-        if (!ModelState.IsValid || !string.Equals(model.Otp, expected, StringComparison.Ordinal))
+        if (!ModelState.IsValid || !VerificationChallenge.Matches(HttpContext.Session, EmailVerificationOtpKey, model.Otp))
         {
             ViewData["VerificationRequested"] = true;
             if (environment.IsDevelopment()) ViewData["OtpHint"] = expected;
@@ -250,7 +290,7 @@ public sealed class MemberController(
         using var response = await HttpContext.RequestServices.GetRequiredService<ILoyaltyApiClient>().PostAsync(
             "api/MemberAccount/UpdateAccountVerify", new { PhoneNumber = model.PhoneNumber, Type = "Email" }, HttpContext.RequestAborted);
         response.EnsureSuccessStatusCode();
-        HttpContext.Session.Remove(EmailVerificationOtpKey);
+        VerificationChallenge.Clear(HttpContext.Session, EmailVerificationOtpKey);
         TempData["StatusMessage"] = "Your email was verified.";
         return RedirectToAction(nameof(Profile));
     }
@@ -277,7 +317,7 @@ public sealed class MemberController(
 
     private async Task<IReadOnlyList<ActivityRecord>> GetActivityAsync()
     {
-        return await loyaltyMembers.GetActivityAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
+        return await features.GetHistoryAsync(GetRequiredPhoneNumber(), "all", HttpContext.RequestAborted);
     }
 
     private string GetRequiredPhoneNumber() =>

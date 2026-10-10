@@ -3,11 +3,19 @@
 <section class="page-heading"><div><span class="eyebrow">Stamp cards</span><h1>Every visit adds up</h1><p>Track current stamp campaigns and stamps you have already used.</p></div></section>
 <div class="section-title"><h2>Active cards</h2></div>
 @if (Model.Active.Count == 0) { <div class="empty-state panel">You do not have an active stamp card yet.</div> }
-<div class="stamp-grid">
+<div class="stamp-grid" id="active-stamps">
 @foreach (var stamp in Model.Active) { <article class="stamp-card"><span class="reward-category">@stamp.Status</span><h2>@stamp.Name</h2><p>@stamp.Description</p><div class="stamp-count"><strong>@stamp.Stamps</strong><span>stamps</span></div><small>@(stamp.Date?.ToString("dd MMM yyyy") ?? "")</small></article> }
 </div>
+@if (Model.Active.Count < (int)(ViewData["ActiveTotal"] ?? 0) && Model.Active.Count < 10000)
+{
+    <div class="text-center mt-4"><a class="btn btn-outline-dark" asp-action="Stamps" asp-route-activeCount="@(Model.Active.Count + 8)" asp-route-usedCount="@Model.Used.Count" asp-fragment="active-stamps">Load more cards</a><p class="mt-2 text-muted">Showing @Model.Active.Count of @ViewData["ActiveTotal"] cards</p></div>
+}
 <div class="section-title mt-5"><h2>Used stamps</h2></div>
 @if (Model.Used.Count == 0) { <div class="empty-state panel">No used stamps to show.</div> }
-<div class="activity-list">
+<div class="activity-list" id="used-stamps">
 @foreach (var stamp in Model.Used) { <div class="activity-item"><span class="activity-badge">S</span><div><strong>@stamp.Name</strong><small>@stamp.Description</small></div><div class="activity-value">@stamp.Stamps used</div></div> }
 </div>
+@if (Model.Used.Count < (int)(ViewData["UsedTotal"] ?? 0) && Model.Used.Count < 10000)
+{
+    <div class="text-center mt-4"><a class="btn btn-outline-dark" asp-action="Stamps" asp-route-usedCount="@(Model.Used.Count + 8)" asp-route-activeCount="@Model.Active.Count" asp-fragment="used-stamps">Load more</a><p class="mt-2 text-muted">Showing @Model.Used.Count of @ViewData["UsedTotal"] records</p></div>
+}

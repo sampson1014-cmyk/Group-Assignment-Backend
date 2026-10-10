@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/LoyaltyBackend.styles.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/portal-polish.css" asp-append-version="true" />
 </head>
 <body class="app-body">
     <header>
@@ -17,19 +18,24 @@
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
                 </button>
-                <div class="navbar-collapse collapse">
+                <div class="navbar-collapse collapse" id="navbarSupportedContent">
                     @if (User.Identity?.IsAuthenticated == true)
                     {
+                        var memberAction = ViewContext.RouteData.Values["action"]?.ToString();
+                        string NavClass(params string[] actions) => actions.Contains(memberAction) ? "nav-link active" : "nav-link";
+                        string? CurrentPage(params string[] actions) => actions.Contains(memberAction) ? "page" : null;
                         <ul class="navbar-nav me-auto">
-                            <li class="nav-item"><a class="nav-link" asp-controller="Member" asp-action="Dashboard">Home</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-controller="Member" asp-action="Wallet">Wallet</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-controller="Member" asp-action="History">History</a></li>
-                            <li class="nav-item"><a class="nav-link" asp-controller="Member" asp-action="Outlets">Stores</a></li>
+                            <li class="nav-item"><a class="@NavClass("Dashboard")" aria-current="@CurrentPage("Dashboard")" asp-controller="Member" asp-action="Dashboard">Home</a></li>
+                            <li class="nav-item"><a class="@NavClass("Wallet")" aria-current="@CurrentPage("Wallet")" asp-controller="Member" asp-action="Wallet">Wallet</a></li>
+                            <li class="nav-item"><a class="@NavClass("Rewards", "RewardDetails")" aria-current="@CurrentPage("Rewards", "RewardDetails")" asp-controller="Member" asp-action="Rewards">Rewards</a></li>
+                            <li class="nav-item"><a class="@NavClass("Stamps")" aria-current="@CurrentPage("Stamps")" asp-controller="Member" asp-action="Stamps">Stamps</a></li>
+                            <li class="nav-item"><a class="@NavClass("History", "TopUpDetails")" aria-current="@CurrentPage("History", "TopUpDetails")" asp-controller="Member" asp-action="History">History</a></li>
+                            <li class="nav-item"><a class="@NavClass("Outlets")" aria-current="@CurrentPage("Outlets")" asp-controller="Member" asp-action="Outlets">Stores</a></li>
                         </ul>
                         <div class="d-flex align-items-center gap-3">
-                            <a class="nav-link text-white" asp-controller="Member" asp-action="Notifications" aria-label="Notifications">Inbox</a>
-                            <a class="nav-link text-white" asp-controller="Member" asp-action="Profile">@User.Identity.Name</a>
-                            <form asp-controller="Account" asp-action="Logout" method="post">
+                            <a class="@NavClass("Notifications", "NotificationDetails")" aria-current="@CurrentPage("Notifications", "NotificationDetails")" asp-controller="Member" asp-action="Notifications" aria-label="Notifications">Inbox</a>
+                            <a class="@NavClass("Profile", "EditProfile", "Referrals", "VerifyEmail", "Feedback")" aria-current="@CurrentPage("Profile", "EditProfile", "Referrals", "VerifyEmail", "Feedback")" asp-controller="Member" asp-action="Profile">@User.Identity.Name</a>
+                            <form asp-controller="Account" asp-action="Logout" method="post" data-confirm-title="Log out?" data-confirm-message="You can log back in whenever you need your rewards." data-confirm-button="Log out">
                                 <button class="btn btn-outline-light btn-sm" type="submit">Log out</button>
                             </form>
                         </div>
@@ -47,6 +53,14 @@
     </header>
     <div class="container page-shell">
         <main role="main">
+            @if (TempData["StatusMessage"] is string statusMessage)
+            {
+                <div class="alert alert-success" role="status" data-portal-flash="success">@statusMessage</div>
+            }
+            @if (TempData["ErrorMessage"] is string errorMessage)
+            {
+                <div class="alert alert-danger" role="alert" data-portal-flash="error">@errorMessage</div>
+            }
             @RenderBody()
         </main>
     </div>
@@ -59,7 +73,10 @@
     </footer>
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/lib/sweetalert2/sweetalert2.all.min.js" asp-append-version="true"></script>
+    <script src="~/js/portal-feedback.js" asp-append-version="true"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
+    <script src="~/js/member-sync.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

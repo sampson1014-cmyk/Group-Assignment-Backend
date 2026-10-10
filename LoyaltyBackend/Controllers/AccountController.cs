@@ -19,6 +19,7 @@ public sealed class AccountController(
     IWebHostEnvironment environment) : Controller
 {
     private const string PhoneLoginChallengeKey = "Account.PhoneLoginChallenge";
+    private const string PhoneLoginOtpKey = "Account.PhoneLoginOtp";
     private const string PendingRegistrationKey = "Account.PendingRegistration";
     private const string PendingRegistrationOtpKey = "Account.PendingRegistrationOtp";
     private const string ResetPhoneKey = "Account.ResetPhone";
@@ -47,6 +48,7 @@ public sealed class AccountController(
 
         if (!response.IsSuccessStatusCode)
         {
+            if (response.StatusCode is not (HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)) response.EnsureSuccessStatusCode();
             ModelState.AddModelError(string.Empty, "The email or password is incorrect.");
             return View(model);
         }
@@ -90,6 +92,15 @@ public sealed class AccountController(
         }
 
         var deviceId = GetOrCreateDeviceId();
+        // Web login must not replace the phone's push registration with a browser ID.
+        using (var profileResponse = await loyaltyApiClient.PostAsync("api/MemberDetails/GetMemberDetails", new PhoneNumberRequest(model.PhoneNumber), HttpContext.RequestAborted))
+        {
+            profileResponse.EnsureSuccessStatusCode();
+            using var profile = JsonDocument.Parse(await profileResponse.Content.ReadAsStringAsync(HttpContext.RequestAborted));
+            var record = profile.RootElement.ValueKind == JsonValueKind.Array && profile.RootElement.GetArrayLength() > 0 ? profile.RootElement[0] : profile.RootElement;
+            if (record.ValueKind == JsonValueKind.Object && record.TryGetProperty("DeviceId", out var registered) && !string.IsNullOrWhiteSpace(registered.GetString()))
+                deviceId = registered.GetString()!;
+        }
         using var response = await loyaltyApiClient.PostAsync(
             "api/MemberAccount/RequestOTP",
             new RequestOtpRequest(model.PhoneNumber, deviceId),
@@ -102,13 +113,14 @@ public sealed class AccountController(
         }
 
         var challenge = await ReadOtpResponseAsync(response, model.PhoneNumber, deviceId, HttpContext.RequestAborted);
-        if (challenge is null)
+        if (challenge is null || string.IsNullOrWhiteSpace(NormalizeOtp(challenge.Otp)))
         {
             ModelState.AddModelError(string.Empty, "The verification service returned an unsupported response.");
             return View(model);
         }
 
         HttpContext.Session.SetString(PhoneLoginChallengeKey, JsonSerializer.Serialize(challenge));
+        VerificationChallenge.Store(HttpContext.Session, PhoneLoginOtpKey, NormalizeOtp(challenge.Otp));
         return RedirectToAction(nameof(VerifyOtp));
     }
 
@@ -140,21 +152,14 @@ public sealed class AccountController(
             return View(model);
         }
 
+        if (!VerificationChallenge.Matches(HttpContext.Session, PhoneLoginOtpKey, model.Otp))
+        {
+            if (environment.IsDevelopment()) ViewData["OtpHint"] = NormalizeOtp(challenge.Otp);
+            ModelState.AddModelError(nameof(model.Otp), "The verification code is invalid or expired. Request another code if needed.");
+            return View(model);
+        }
         var firstLogin = bool.TryParse(challenge.FirstLogin, out var parsedFirstLogin) && parsedFirstLogin;
         var deviceId = string.IsNullOrWhiteSpace(challenge.DeviceId) ? GetOrCreateDeviceId() : challenge.DeviceId;
-        if (firstLogin)
-        {
-            using var deviceResponse = await loyaltyApiClient.PostAsync(
-                "api/MemberLogin/UpdateDeviceId",
-                new ChangeDeviceRequest(model.PhoneNumber, deviceId),
-                HttpContext.RequestAborted);
-            if (!deviceResponse.IsSuccessStatusCode)
-            {
-                if (environment.IsDevelopment()) ViewData["OtpHint"] = NormalizeOtp(challenge.Otp);
-                ModelState.AddModelError(string.Empty, "We could not register this browser for first-time login.");
-                return View(model);
-            }
-        }
 
         using var response = await loyaltyApiClient.PostAsync(
             "api/MemberLogin/MemberMobileLoginGetProfile",
@@ -190,6 +195,7 @@ public sealed class AccountController(
             member.PhoneNumber ?? model.PhoneNumber,
             rememberMe: false);
         HttpContext.Session.Remove(PhoneLoginChallengeKey);
+        VerificationChallenge.Clear(HttpContext.Session, PhoneLoginOtpKey);
         return RedirectToAction("Dashboard", "Member");
     }
 
@@ -231,7 +237,7 @@ public sealed class AccountController(
                 new { ReferralBy = model.ReferralCode },
                 HttpContext.RequestAborted);
             var referralResult = await referralResponse.Content.ReadAsStringAsync(HttpContext.RequestAborted);
-            if (!referralResponse.IsSuccessStatusCode || referralResult.Contains("false", StringComparison.OrdinalIgnoreCase) || referralResult.Contains("invalid", StringComparison.OrdinalIgnoreCase))
+            if (!referralResponse.IsSuccessStatusCode || !IsValidReferralResult(referralResult))
             {
                 ModelState.AddModelError(nameof(model.ReferralCode), "This referral code is not valid.");
                 return View(model);
@@ -258,7 +264,7 @@ public sealed class AccountController(
         }
 
         HttpContext.Session.SetString(PendingRegistrationKey, JsonSerializer.Serialize(model));
-        HttpContext.Session.SetString(PendingRegistrationOtpKey, normalizedOtp);
+        VerificationChallenge.Store(HttpContext.Session, PendingRegistrationOtpKey, normalizedOtp);
         return RedirectToAction(nameof(VerifyRegistration));
     }
 
@@ -281,7 +287,7 @@ public sealed class AccountController(
         var registration = string.IsNullOrWhiteSpace(json) ? null : JsonSerializer.Deserialize<RegisterViewModel>(json);
         if (registration is null || string.IsNullOrWhiteSpace(expectedOtp)) return RedirectToAction(nameof(Register));
         if (!ModelState.IsValid) return View(model);
-        if (!string.Equals(NormalizeOtp(model.Otp), expectedOtp, StringComparison.Ordinal))
+        if (!VerificationChallenge.Matches(HttpContext.Session, PendingRegistrationOtpKey, model.Otp))
         {
             if (environment.IsDevelopment()) ViewData["OtpHint"] = expectedOtp;
             ModelState.AddModelError(nameof(model.Otp), "The verification code is invalid.");
@@ -292,9 +298,9 @@ public sealed class AccountController(
             registration.FullName,
             registration.Email,
             registration.PhoneNumber,
-            registration.ReferralCode,
+            registration.ReferralCode ?? string.Empty,
             registration.Password,
-            registration.Birthday?.ToString("yyyy-MM-dd"),
+            registration.Birthday?.ToString("yyyy-MM-dd") ?? string.Empty,
             registration.EmailSubscribe.ToString().ToLowerInvariant()), HttpContext.RequestAborted);
         if (!response.IsSuccessStatusCode)
         {
@@ -303,7 +309,7 @@ public sealed class AccountController(
         }
 
         HttpContext.Session.Remove(PendingRegistrationKey);
-        HttpContext.Session.Remove(PendingRegistrationOtpKey);
+        VerificationChallenge.Clear(HttpContext.Session, PendingRegistrationOtpKey);
         TempData["StatusMessage"] = "Your member account was created. You can now log in.";
         return RedirectToAction(nameof(Login));
     }
@@ -330,7 +336,7 @@ public sealed class AccountController(
             return View(model);
         }
         HttpContext.Session.SetString(ResetPhoneKey, model.PhoneNumber);
-        HttpContext.Session.SetString(ResetOtpKey, otp);
+        VerificationChallenge.Store(HttpContext.Session, ResetOtpKey, otp);
         return RedirectToAction(nameof(ResetPassword));
     }
 
@@ -351,7 +357,7 @@ public sealed class AccountController(
         if (string.IsNullOrWhiteSpace(expectedOtp)) return RedirectToAction(nameof(ForgotPassword));
         model.PhoneNumber = HttpContext.Session.GetString(ResetPhoneKey) ?? model.PhoneNumber;
         if (!ModelState.IsValid) return View(model);
-        if (!string.Equals(NormalizeOtp(model.Otp), expectedOtp, StringComparison.Ordinal))
+        if (!VerificationChallenge.Matches(HttpContext.Session, ResetOtpKey, model.Otp))
         {
             if (environment.IsDevelopment()) ViewData["OtpHint"] = expectedOtp;
             ModelState.AddModelError(nameof(model.Otp), "The verification code is invalid.");
@@ -360,11 +366,12 @@ public sealed class AccountController(
         using var response = await loyaltyApiClient.PostAsync("api/MemberAccount/MemberResetPassword", new { model.PhoneNumber, model.NewPassword }, HttpContext.RequestAborted);
         if (!response.IsSuccessStatusCode)
         {
+            if (environment.IsDevelopment()) ViewData["OtpHint"] = expectedOtp;
             ModelState.AddModelError(string.Empty, "The password could not be reset.");
             return View(model);
         }
         HttpContext.Session.Remove(ResetPhoneKey);
-        HttpContext.Session.Remove(ResetOtpKey);
+        VerificationChallenge.Clear(HttpContext.Session, ResetOtpKey);
         TempData["StatusMessage"] = "Your password was reset. Log in with the new password.";
         return RedirectToAction(nameof(Login));
     }
@@ -476,8 +483,9 @@ public sealed class AccountController(
     private static async Task<bool> HasMemberRecordAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.StatusCode == HttpStatusCode.NotFound) return false;
-        response.EnsureSuccessStatusCode();
         var body = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+        if (Regex.IsMatch(body, @"member\s+not\s+found", RegexOptions.IgnoreCase)) return false;
+        response.EnsureSuccessStatusCode();
         if (string.IsNullOrWhiteSpace(body) || body is "null" or "{}" or "[]") return false;
         try
         {
@@ -499,6 +507,13 @@ public sealed class AccountController(
         record.TryGetProperty(propertyName, out var value) &&
         value.ValueKind == JsonValueKind.String &&
         !string.IsNullOrWhiteSpace(value.GetString());
+
+    private static bool IsValidReferralResult(string body)
+    {
+        var result = body.Trim().Trim('"');
+        return result.Equals("Referral Code Exist", StringComparison.OrdinalIgnoreCase)
+            || result.Equals("true", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string NormalizeOtp(string? value)
     {

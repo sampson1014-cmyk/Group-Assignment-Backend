@@ -7,4 +7,14 @@
         <div><dt>@(voucher ? "Value" : "Points required")</dt><dd>@(voucher ? Model.DiscountAmount ?? $"{Model.Points} points" : $"{Model.Points} points")</dd></div>
         <div><dt>Expiry</dt><dd>@(Model.ExpireAt?.ToString("dd MMM yyyy") ?? "No expiry shown")</dd></div>
     </dl>
+    @if (ViewData["CanRedeem"] as bool? == true)
+    {
+        <h2>Redeem at the counter</h2>
+        <p>Show this code to staff. Your points and item availability are checked before redemption.</p>
+        <img class="reward-qr" src="@Url.Action("RewardQr", "Member", new { id = Model.RewardId, voucher })" alt="@Model.Name redemption QR" />
+    }
+    else
+    {
+        <p>This item is expired, unavailable, or requires more points than your current balance.</p>
+    }
 </div>

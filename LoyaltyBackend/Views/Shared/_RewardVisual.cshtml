@@ -1,0 +1,33 @@
+@model RewardCard
+@{
+    var drink = Model.Category.Contains("drink", StringComparison.OrdinalIgnoreCase);
+    var voucher = Model.Category.Contains("voucher", StringComparison.OrdinalIgnoreCase) || Model.RewardId?.StartsWith("Voucher-", StringComparison.OrdinalIgnoreCase) == true;
+}
+<div class="reward-visual @(drink ? "reward-visual-drink" : voucher ? "reward-visual-voucher" : "reward-visual-gift")" aria-hidden="true">
+    <span class="visual-orbit"></span>
+    <svg viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        @if (drink)
+        {
+            <ellipse cx="60" cy="86" rx="31" ry="5" fill="currentColor" opacity=".08" />
+            <path d="M37 28h43l-5 51H43l-6-51Z" fill="white" stroke="currentColor" stroke-width="2" />
+            <path d="m42 49 4 25h25l3-25H42Z" fill="currentColor" opacity=".15" />
+            <path d="m61 45 7-31h13M33 28h51" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+            <rect x="50" y="52" width="9" height="9" rx="2" stroke="currentColor" opacity=".5" transform="rotate(-12 50 52)" />
+            <path d="m21 49 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="currentColor" opacity=".4" />
+        }
+        else if (voucher)
+        {
+            <path d="M24 28h72v16a9 9 0 0 0 0 18v16H24V62a9 9 0 0 0 0-18V28Z" fill="white" stroke="currentColor" stroke-width="2" />
+            <path d="M75 33v40" stroke="currentColor" stroke-width="2" stroke-dasharray="3 5" opacity=".4" />
+            <path d="m48 40 4 8 9 1-6 6 1 9-8-4-8 4 1-9-6-6 9-1 4-8Z" fill="currentColor" opacity=".7" />
+        }
+        else
+        {
+            <rect x="31" y="43" width="58" height="38" rx="5" fill="white" stroke="currentColor" stroke-width="2" />
+            <rect x="27" y="32" width="66" height="14" rx="4" fill="white" stroke="currentColor" stroke-width="2" />
+            <path d="M55 33v47h10V33" fill="currentColor" opacity=".2" />
+            <path d="M60 32c-22 0-24-19-13-19 9 0 13 19 13 19Zm0 0c22 0 24-19 13-19-9 0-13 19-13 19Z" stroke="currentColor" stroke-width="2" />
+        }
+    </svg>
+    <span class="visual-caption">@(drink ? "A little refreshment" : voucher ? "Something to look forward to" : "A little more for you")</span>
+</div>

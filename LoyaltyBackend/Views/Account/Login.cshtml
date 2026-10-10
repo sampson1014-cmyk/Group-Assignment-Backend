@@ -3,18 +3,15 @@
     ViewData["Title"] = "Member login";
 }
 
-<section class="auth-shell">
+<section class="auth-shell auth-visual-layout">
     <div class="auth-copy">
         <span class="eyebrow">Welcome back</span>
         <h1>Pick up where you left off.</h1>
         <p>Log in to view your balance, points, stamps and rewards.</p>
+        <partial name="_AuthMembershipVisual" model='@("returning")' />
     </div>
     <div class="form-card">
         <h2>Member login</h2>
-        @if (TempData["StatusMessage"] is string message)
-        {
-            <div class="alert alert-success">@message</div>
-        }
         <form method="post" asp-route-returnUrl="@ViewData["ReturnUrl"]">
             <div asp-validation-summary="ModelOnly" class="text-danger"></div>
             <div class="form-floating mb-3">
@@ -35,7 +32,7 @@
             <button class="btn btn-primary w-100 btn-lg" type="submit">Log in</button>
         </form>
         <div class="auth-divider"><span>or</span></div>
-        <a class="btn btn-outline-dark w-100" asp-action="PhoneLogin">Log in with phone OTP</a>
+        <a class="btn btn-outline-dark w-100" asp-action="PhoneLogin">Log in with a phone code</a>
         <p class="form-foot">New to Eduvo? <a asp-action="Register">Create an account</a></p>
     </div>
 </section>
