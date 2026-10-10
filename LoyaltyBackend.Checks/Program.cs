@@ -8,6 +8,18 @@ using System.Text.Json;
 var passed = 0;
 void Check(bool condition, string name) { if (!condition) throw new Exception(name); Console.WriteLine($"PASS {name}"); passed++; }
 var api = new FakeApi();
+Check(!MemberPhoneIdentity.IsValid("11"), "Member ID 11 cannot be used as a phone-number identity");
+Check(MemberPhoneIdentity.IsValid("+600000000001") && MemberPhoneIdentity.IsValid("0123456789"), "Valid member phone-number identities remain supported");
+using (var rewardPayload = JsonDocument.Parse(MemberQrImage.RewardPayload("+600000000001", "Reward-1", true, "secure-grant")))
+{
+    var root = rewardPayload.RootElement;
+    Check(root.GetProperty("t").GetString() == "R" && root.GetProperty("p").GetString() == "+600000000001"
+        && root.GetProperty("r").GetString() == "Reward-1" && root.GetProperty("k").GetString() == "v"
+        && root.GetProperty("v").GetString() == "secure-grant", "Website reward QR matches mobile payload format");
+}
+Check(MemberQrImage.Render("secure-member-grant").Take(8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }), "Member QR renders as a PNG");
+Check(MemberQrImage.Render(MemberQrImage.RewardPayload("+600000000001", "Reward-1", false, "secure-grant"), true).Length > 100,
+    "Reward QR renders the mobile-compatible envelope");
 api.Data["api/MemberDetails/GetMemberDetails"] = """{"Name":"Sample Member","Balance":0,"Point":0,"TotalStamp":0}""";
 api.Data["api/MemberWallet/MemberGetWalletDetails"] = """{"Balance":92.3,"Point":1581,"TotalStamp":9,"Tier":"Platinum"}""";
 var summary = await new LoyaltyMemberService(api).GetSummaryAsync("+600000000001");

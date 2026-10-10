@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using System.Security.Claims;
 using QRCoder;
 using System.Text.Json;
@@ -161,17 +162,15 @@ public sealed class MemberController(
     }
 
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    public async Task<IActionResult> MemberQr()
+    public async Task<IActionResult> MemberQr(string? format = null)
     {
         var payload = await qrService.CreateAsync(GetRequiredPhoneNumber(), cancellationToken: HttpContext.RequestAborted);
-        using var generator = new QRCodeGenerator();
-        using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
-        var qr = new SvgQRCode(data);
-        return Content(qr.GetGraphic(6), "image/svg+xml");
+        if (format == "json") return Json(new { payload, width = 420, errorCorrectionLevel = "M" });
+        return File(MemberQrImage.Render(payload), "image/png");
     }
 
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    public async Task<IActionResult> RewardQr(string id, bool voucher = false)
+    public async Task<IActionResult> RewardQr(string id, bool voucher = false, string? format = null)
     {
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
         var memberItems = await features.GetRewardsAsync(GetRequiredPhoneNumber(), HttpContext.RequestAborted);
@@ -181,11 +180,11 @@ public sealed class MemberController(
         var item = ownedItem ?? await features.GetRewardAsync(id, GetRequiredPhoneNumber(), isVoucher, HttpContext.RequestAborted);
         if (item is null) return NotFound();
         if (!item.CanRedeem) return BadRequest("This item is expired or unavailable.");
-        var payload = await qrService.CreateAsync(GetRequiredPhoneNumber(), id, isVoucher, HttpContext.RequestAborted);
-        using var generator = new QRCodeGenerator();
-        using var data = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
-        var qr = new SvgQRCode(data);
-        return Content(qr.GetGraphic(6), "image/svg+xml");
+        var phoneNumber = GetRequiredPhoneNumber();
+        var token = await qrService.CreateAsync(phoneNumber, id, isVoucher, HttpContext.RequestAborted);
+        var payload = MemberQrImage.RewardPayload(phoneNumber, id, isVoucher, token);
+        if (format == "json") return Json(new { payload, width = 360, errorCorrectionLevel = "L" });
+        return File(MemberQrImage.Render(payload, reward: true), "image/png");
     }
 
     public async Task<IActionResult> EditProfile()
@@ -318,6 +317,18 @@ public sealed class MemberController(
     private async Task<IReadOnlyList<ActivityRecord>> GetActivityAsync()
     {
         return await features.GetHistoryAsync(GetRequiredPhoneNumber(), "all", HttpContext.RequestAborted);
+    }
+
+    public override async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
+    {
+        if (User.Identity?.IsAuthenticated == true && !MemberPhoneIdentity.IsValid(User.FindFirstValue(ClaimTypes.MobilePhone)))
+        {
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            TempData["ErrorMessage"] = "Please sign in again to refresh your member identity and QR code.";
+            context.Result = RedirectToAction("Login", "Account");
+            return;
+        }
+        await next();
     }
 
     private string GetRequiredPhoneNumber() =>

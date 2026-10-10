@@ -54,7 +54,7 @@ public sealed class AccountController(
         }
 
         var member = await ReadMemberResponseAsync(response, HttpContext.RequestAborted);
-        if (member is null)
+        if (member is null || !MemberPhoneIdentity.IsValid(member.PhoneNumber))
         {
             ModelState.AddModelError(string.Empty, "The member profile could not be loaded.");
             return View(model);
@@ -385,6 +385,8 @@ public sealed class AccountController(
 
     private async Task SignInMemberAsync(string displayName, string identifier, string? phoneNumber, bool rememberMe)
     {
+        if (!MemberPhoneIdentity.IsValid(phoneNumber))
+            throw new InvalidOperationException("The member profile must contain a registered phone number, not a member ID.");
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, identifier),

@@ -11,6 +11,8 @@ public sealed class SharedGatewayQrService(IHttpClientFactory clients, IConfigur
 {
     public async Task<string> CreateAsync(string phoneNumber, string? rewardId = null, bool voucher = false, CancellationToken cancellationToken = default)
     {
+        if (!MemberPhoneIdentity.IsValid(phoneNumber))
+            throw new ArgumentException("A registered phone number is required to generate a member QR; a member ID cannot be used.", nameof(phoneNumber));
         var secret = configuration["SharedGateway:SessionSecret"] ?? configuration["APP_JWT_SECRET"];
         if (string.IsNullOrWhiteSpace(secret))
             throw new InvalidOperationException("Configure the shared backend session secret on the web server before generating QR codes.");

@@ -236,7 +236,7 @@ body.app-body { background:#f5f5f7; font-family:-apple-system,BlinkMacSystemFont
 .app-body .wallet-panel-bottom a { color:#fff; font-weight:600; white-space:nowrap; }.wallet-panel-bottom a span { margin-left:.6rem; }
 .member-code-panel { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:1.5rem; background:#fff; border:1px solid #e5e5ea; border-radius:24px; padding:1.8rem; }
 .member-code-panel h2 { font-size:1.7rem; font-weight:600; letter-spacing:-.035em; line-height:1.2; margin:.7rem 0; }.member-code-panel p { color:#6e6e73; font-size:.82rem; line-height:1.6; max-width:230px; }
-.member-code-panel .member-qr { width:160px; height:160px; flex-shrink:0; border:0; border-radius:0; padding:6px; }.member-code-panel .quiet-link { font-size:.77rem; }
+.member-code-panel .quiet-link { font-size:.77rem; }
 .member-metrics { grid-column:1/-1; display:grid; grid-template-columns:1fr 1fr 1.2fr; padding:1.5rem 0 1.2rem; }
 .member-metrics>a,.membership-note { display:flex; flex-direction:column; min-width:0; padding:.3rem 1.8rem; border-right:1px solid #dedee6; }.member-metrics>a:first-child { padding-left:.3rem; }.membership-note { border:0; }
 .metric-label { display:flex; justify-content:space-between; gap:1rem; color:#6e6e73; font-size:.78rem; font-weight:500; }.metric-label>span { color:#5b5bd6; }
@@ -351,3 +351,16 @@ body.app-body { background:#f5f5f7; }
         transform:none;
     }
 }
+
+/* Keep every secure QR large, square and unobstructed, including narrow screens. */
+.app-body .member-qr,.app-body .reward-qr {
+    display:block; width:340px; height:auto; aspect-ratio:1; max-width:100%;
+    flex-shrink:0; object-fit:contain; padding:0; border:0; border-radius:0;
+    background:#fff;
+}
+.app-body .member-qr[hidden],.app-body .reward-qr[hidden] { display:none; }
+.app-body .qr-card { flex-wrap:wrap; }
+.app-body .member-code-panel { flex-direction:column; align-items:flex-start; }
+.app-body .member-code-panel .member-qr { align-self:center; }
+.app-body .member-code-panel p { max-width:none; }
+.app-body .reward-qr { width:320px; margin:1.5rem auto; }
